@@ -1,0 +1,28 @@
+kind = "web"
+previewPath = "/"
+title = "민사고 김태완 · 일정 허브"
+description = "민족사관고등학교 학생을 위한 모바일 우선 일정 허브. 학교 캘린더, 수업 시간표, 학교·개인 할 일과 메모를 한 화면에서 확인하고 관리합니다."
+version = "1.0.0"
+id = "artifacts/minjok-schedule"
+router = "path"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 19179
+
+[services.development]
+run = "pnpm --filter @workspace/minjok-schedule run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/minjok-schedule", "run", "build" ]
+serve = "static"
+publicDir = "artifacts/minjok-schedule/dist/public"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "19179"
+BASE_PATH = "/"
