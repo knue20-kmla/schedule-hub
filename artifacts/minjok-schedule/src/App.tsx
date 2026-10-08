@@ -415,7 +415,7 @@ export default function App() {
           ))}
         </div>
 
-        <div className="is-columns">
+        <div className={`is-columns${activeFilter === '전체' ? '' : ' single'}`}>
         <div className="is-col">
         <section className="is-section" id="integrated-agenda" aria-label="학교 일정">
           {(activeFilter === '전체' || activeFilter === '캘린더') && <>

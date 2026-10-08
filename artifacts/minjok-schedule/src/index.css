@@ -306,3 +306,26 @@ button.is-class:hover { background: rgba(255,255,255,.17); }
 .is-filter.active { background: linear-gradient(160deg, #24429f, #14214f); color: #fff; box-shadow: 0 6px 14px rgba(20,33,79,.32); }
 .is-filter-dot { flex: 0 0 6px; }
 @media (max-width: 340px) { .is-filter { font-size: 12px; letter-spacing: -.05em; } .is-filter-dot { display: none; } }
+
+/* tablet: filtered views (not 전체) use one centered column instead of a half-empty two-column grid */
+@media (min-width: 768px) {
+  .is-columns.single { display: block; max-width: 720px; margin: 0 auto; }
+  .is-columns.single .is-col + .is-col > :first-child { margin-top: 18px; }
+}
+
+/* timetable card: lighter periwinkle card with white chips (replaces the dark navy version above) */
+.is-timetable { border: 1px solid #c3d1f2; background: linear-gradient(160deg, #eaf0fd 0%, #d7e2fa 100%); box-shadow: 0 12px 26px rgba(40,70,160,.16); }
+.is-timetable-label { color: var(--deep); }
+.is-class-tag { background: #f7e3ad; color: #6b4a08; }
+.is-class { border: 1px solid #c9d6f3; background: #fff; box-shadow: 0 3px 10px rgba(20,33,79,.08); }
+button.is-class:hover { background: #f6f9ff; }
+.is-class-time { color: #8a6217; }
+.is-class-name { color: var(--deep); }
+.is-class-room { color: #5d6985; }
+.is-class-mark { background: var(--gold); color: #3a2704; }
+.is-timetable-note { color: #4f5c7a; }
+.is-timetable-connect { border: 1px solid #c3d1f2; background: #fff; color: var(--deep); box-shadow: 0 3px 10px rgba(20,33,79,.07); }
+.is-timetable-connect:hover { background: #f6f9ff; }
+.is-connect-status { background: #f7e3ad; color: #5a400a; }
+.is-timetable .is-empty-filter { border-color: #aebfe6; background: rgba(255,255,255,.65); color: #4f5c7a; }
+.is-class-row { margin: -2px -4px 0; padding: 2px 4px 12px; }
