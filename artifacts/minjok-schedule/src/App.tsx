@@ -99,6 +99,12 @@ function loadNote() {
   catch { return '오늘 과학 수행평가 초안 제출하기. 끝나면 서점에 들러서 새 노트 구경하기.'; }
 }
 
+// Sample events are tagged 학교; live events show their calendar name, except when it is just an e-mail address.
+function eventLabel(event: CalendarEvent) {
+  if (event.tag === undefined) return '학교';
+  return event.tag.includes('@') ? '' : event.tag;
+}
+
 export default function App() {
   const days = useMemo(buildDays, []);
   const [selectedDate, setSelectedDate] = useState(days[2].key);
@@ -111,6 +117,7 @@ export default function App() {
   const [tasks, setTasks] = useState<PlannerTask[]>(loadTasks);
   const [note, setNote] = useState(loadNote);
   const [noteDraft, setNoteDraft] = useState(note);
+  const [profileOpen, setProfileOpen] = useState(false);
   const [noteOpen, setNoteOpen] = useState(false);
   const [taskOpen, setTaskOpen] = useState(false);
   const [taskDraft, setTaskDraft] = useState('');
@@ -168,6 +175,10 @@ export default function App() {
       else flash('구글 캘린더를 불러오지 못했어요. 잠시 뒤 다시 시도해 주세요.');
       return false;
     } finally { setCalendarBusy(false); }
+  }
+  async function refreshCalendar() {
+    if (!token || calendarBusy) return;
+    if (await loadCalendar(token)) flash('학교 일정을 새로 불러왔어요.');
   }
   async function connectGoogle() {
     if (calendarBusy) return;
@@ -238,7 +249,7 @@ export default function App() {
                 <span className="is-brand-sub">MINJOK LEADERSHIP ACADEMY</span>
               </span>
             </div>
-            <button type="button" className="is-profile" aria-label="프로필 알림" data-testid="button-profile-notice" onClick={() => flash('학교와 나의 하루를 차분히 살펴봐요.')}>
+            <button type="button" className="is-profile" aria-label="개인정보" data-testid="button-profile-notice" onClick={() => setProfileOpen(true)}>
               <UserRound size={17} strokeWidth={1.7} />
             </button>
           </div>
@@ -270,26 +281,23 @@ export default function App() {
 
         <div className="is-columns">
         <div className="is-col">
-        {(activeFilter === '전체' || activeFilter === '캘린더') && (
-          <section className="is-source-card" aria-label="Google Calendar 학교 일정 샘플" data-testid="status-google-calendar">
-            <span className="is-google-mark"><CalendarDays size={17} strokeWidth={1.8} /></span>
-            <div className="is-source-copy"><span className="is-source-title">Google Calendar · 학교 일정</span><span className="is-source-caption">{connected ? '연결됨 · 읽기 전용' : token ? '불러오는 중…' : linked ? '다시 연결이 필요해요' : '연결되지 않음 · 샘플 일정'}</span></div>
-            <button type="button" className="is-sync" onClick={() => void connectGoogle()} disabled={calendarBusy} aria-label={connected ? '구글 캘린더 새로고침' : '구글 캘린더 연결'} data-testid="button-google-connect"><RefreshCw size={12} className={calendarBusy ? 'is-spin' : undefined} /><span>{connected ? '새로고침' : calendarBusy ? '연결 중…' : '구글 연결'}</span></button>
-            {token && <button type="button" className="is-unlink" onClick={unlinkGoogle} data-testid="button-google-unlink">연결 해제</button>}
-          </section>
-        )}
-
-        <section className="is-section" id="integrated-agenda" aria-label="학교 캘린더 일정">
+        <section className="is-section" id="integrated-agenda" aria-label="학교 일정">
           {(activeFilter === '전체' || activeFilter === '캘린더') && <>
             <div className="is-section-head">
-              <div><h2 className="is-section-title">학교 캘린더</h2><p className="is-section-sub">{connected ? '내 Google Calendar에서 가져온 일정이에요' : 'Google Calendar에서 가져온 샘플 일정 · 연결 전'}</p></div>
+              <div>
+                <div className="is-title-row">
+                  <h2 className="is-section-title">학교 일정</h2>
+                  {token && <button type="button" className="is-refresh" onClick={() => void refreshCalendar()} disabled={calendarBusy} aria-label="학교 일정 새로고침" data-testid="button-calendar-refresh"><RefreshCw size={14} className={calendarBusy ? 'is-spin' : undefined} /></button>}
+                </div>
+                <p className="is-section-sub">{connected ? '내 Google Calendar에서 가져온 일정이에요' : token ? '불러오는 중…' : '샘플 일정 · 오른쪽 위 프로필에서 구글 캘린더를 연결해요'}</p>
+              </div>
               <button type="button" className="is-more" aria-label="일정 개수" onClick={() => flash(`${connected ? '' : '샘플 '}일정 ${calendarEvents.length}개를 보고 있어요.`)} data-testid="button-calendar-count">{calendarEvents.length}개 <ChevronDown size={13} /></button>
             </div>
             <div className="is-event-list">
               {!visibleCalendarEvents.length && <div className="is-empty-filter" data-testid="status-no-events">이 날은 등록된 일정이 없어요.</div>}
               {visibleCalendarEvents.map((event) => <article key={event.id ?? event.time} className="is-event" data-testid={`event-calendar-${event.time}`}>
                 <time className="is-event-time">{event.time}</time><span className="is-event-marker" aria-hidden="true" />
-                <div className="is-event-body"><p className="is-event-title"><span className="is-event-name">{event.title}</span><span className="is-event-label">{event.tag ?? '학교'}</span></p>{event.note && <p className="is-event-note">{event.note}</p>}</div>
+                <div className="is-event-body"><p className="is-event-title"><span className="is-event-name">{event.title}</span>{eventLabel(event) && <span className="is-event-label">{eventLabel(event)}</span>}</p>{event.note && <p className="is-event-note">{event.note}</p>}</div>
               </article>)}
             </div>
           </>}
@@ -345,6 +353,20 @@ export default function App() {
       </nav>
       {notice && <div className="is-toast" role="status" aria-live="polite" data-testid="status-toast">{notice}</div>}
 
+      {profileOpen && <div className="is-modal-backdrop" onClick={(event) => { if (event.target === event.currentTarget) setProfileOpen(false); }}>
+        <section className="is-modal" role="dialog" aria-label="개인정보">
+          <div className="is-modal-head"><h2 className="is-modal-title">개인정보</h2><button type="button" className="is-close" aria-label="닫기" onClick={() => setProfileOpen(false)} data-testid="button-close-profile"><X size={17} /></button></div>
+          <div className="is-source-card" data-testid="status-google-calendar">
+            <span className="is-google-mark"><CalendarDays size={17} strokeWidth={1.8} /></span>
+            <div className="is-source-copy"><span className="is-source-title">Google Calendar</span><span className="is-source-caption">{connected ? '연결됨 · 읽기 전용' : token ? '불러오는 중…' : linked ? '다시 연결이 필요해요' : '연결되지 않음 · 샘플 일정'}</span></div>
+            {token
+              ? <button type="button" className="is-sync" onClick={unlinkGoogle} aria-label="구글 캘린더 연결 해제" data-testid="button-google-unlink"><span>연결 해제</span></button>
+              : <button type="button" className="is-sync" onClick={() => void connectGoogle()} disabled={calendarBusy} aria-label="구글 캘린더 연결" data-testid="button-google-connect"><RefreshCw size={12} className={calendarBusy ? 'is-spin' : undefined} /><span>{calendarBusy ? '연결 중…' : '구글 연결'}</span></button>}
+          </div>
+          <p className="is-modal-hint">일정은 읽기만 하고 수정하지 않아요. 불러온 일정은 이 기기에서만 보이고 따로 저장하지 않아요.</p>
+          <p className="is-modal-hint">메모와 할 일은 이 기기의 브라우저에 저장돼요.</p>
+        </section>
+      </div>}
       {noteOpen && <div className="is-modal-backdrop" onClick={(event) => { if (event.target === event.currentTarget) setNoteOpen(false); }}>
         <form className="is-modal" aria-label="메모 편집" onSubmit={(event) => { event.preventDefault(); saveNote(); }}>
           <div className="is-modal-head"><h2 className="is-modal-title">나만 보는 메모</h2><button type="button" className="is-close" aria-label="닫기" onClick={() => setNoteOpen(false)} data-testid="button-close-note"><X size={17} /></button></div>
