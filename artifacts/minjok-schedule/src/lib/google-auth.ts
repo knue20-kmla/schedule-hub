@@ -90,8 +90,12 @@ export function revokeToken(slot: string, token: AccessToken | null) {
   if (token && isReady()) window.google!.accounts.oauth2.revoke(token.value);
 }
 
-async function send<T>(slot: string, token: AccessToken, url: string, method: 'GET' | 'POST'): Promise<T> {
-  const response = await fetch(url, { method, headers: { Authorization: `Bearer ${token.value}` } });
+async function send<T>(slot: string, token: AccessToken, url: string, method: 'GET' | 'POST' | 'PATCH', body?: string, contentType?: string): Promise<T> {
+  const response = await fetch(url, {
+    method,
+    headers: { Authorization: `Bearer ${token.value}`, ...(contentType ? { 'Content-Type': contentType } : {}) },
+    ...(body !== undefined ? { body } : {}),
+  });
   if (response.status === 401) { storeToken(slot, null); throw new AuthError('expired'); }
   if (!response.ok) {
     let detail = '';
@@ -111,3 +115,5 @@ export function googleGet<T>(slot: string, token: AccessToken, url: string, para
 }
 
 export const googlePost = <T>(slot: string, token: AccessToken, url: string) => send<T>(slot, token, url, 'POST');
+export const googleSend = <T>(slot: string, token: AccessToken, url: string, method: 'POST' | 'PATCH', body: string, contentType: string) =>
+  send<T>(slot, token, url, method, body, contentType);

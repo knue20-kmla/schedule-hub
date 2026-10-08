@@ -85,7 +85,7 @@ button { -webkit-tap-highlight-color: transparent; }
 .is-note-card .is-note-preview { -webkit-line-clamp:3; }
 .is-weekend-empty { margin-top:0; }
 .is-columns { display:block; }.is-col { min-width:0; }
-@media (min-width: 768px) {
+@media (min-width: 768px) and (not ((min-width: 900px) and (min-height: 640px) and (hover: hover) and (pointer: fine))) {
   .is-shell { max-width:1040px; padding-right:32px; padding-left:32px; }
   .is-campus-hero { height:210px; border-radius:26px; }
   .is-heading { font-size:34px; }
@@ -147,7 +147,7 @@ button.is-class:active { transform:scale(.97); }
 .is-mail-attach span { color:#8791a5; }
 .is-mail-connect { display:flex; flex-direction:column; align-items:center; gap:10px; padding:18px 6px 8px; color:var(--navy); text-align:center; }
 .is-mail-connect p { margin:0; color:#5e6a82; font-size:13px; line-height:1.6; }
-@media (min-width: 768px) { .is-modal.is-sheet { width:min(100%,560px); } .is-att-btn { min-width:56px; } }
+@media (min-width: 768px) and (not ((min-width: 900px) and (min-height: 640px) and (hover: hover) and (pointer: fine))) { .is-modal.is-sheet { width:min(100%,560px); } .is-att-btn { min-width:56px; } }
 .is-mail-item { display:flex; align-items:stretch; border-bottom:1px solid #edf0f5; }
 .is-mail-item .is-mail-row { flex:1 1 auto; min-width:0; width:auto; border-bottom:0; }
 .is-mail-trash { flex:0 0 44px; display:grid; place-items:center; width:44px; border:0; background:transparent; color:#9a6a6a; cursor:pointer; }
@@ -291,7 +291,7 @@ button.is-class:hover { background: rgba(255,255,255,.17); }
 .is-mail-undo { background: var(--deep); }
 
 /* tablet: restate the sizes this block would otherwise override */
-@media (min-width: 768px) {
+@media (min-width: 768px) and (not ((min-width: 900px) and (min-height: 640px) and (hover: hover) and (pointer: fine))) {
   .is-campus-hero { height: 232px; border-radius: 30px; }
   .is-heading { font-size: 40px; }
   .is-bottom { width: min(100%, 560px); bottom: calc(14px + env(safe-area-inset-bottom)); border-radius: 30px; }
@@ -308,7 +308,7 @@ button.is-class:hover { background: rgba(255,255,255,.17); }
 @media (max-width: 340px) { .is-filter { font-size: 12px; letter-spacing: -.05em; } .is-filter-dot { display: none; } }
 
 /* tablet: filtered views (not 전체) use one centered column instead of a half-empty two-column grid */
-@media (min-width: 768px) {
+@media (min-width: 768px) and (not ((min-width: 900px) and (min-height: 640px) and (hover: hover) and (pointer: fine))) {
   .is-columns.single { display: block; max-width: 720px; margin: 0 auto; }
   .is-columns.single .is-col + .is-col > :first-child { margin-top: 18px; }
 }
@@ -335,11 +335,10 @@ button.is-class:hover { background: #f6f9ff; }
 .is-filter { color: #46537a; }
 .is-filter.active { background: #fff; color: var(--deep); box-shadow: 0 4px 10px rgba(20,33,79,.2), 0 0 0 1px rgba(20,33,79,.06), inset 0 -3px 0 var(--gold); }
 
-/* ===== Desktop laptop frame: slim bezel + base (mouse + large window only; real phones and tablets stay full-bleed) ===== */
 /* Phones (< 768px): no frame, the page scrolls normally. The wrappers add no boxes. */
 .is-device, .is-screen, .is-scroll { display: contents; }
 /* Tablets (>= 768px): slim teal bezel around a rounded screen that scrolls inside it. */
-@media (min-width: 768px) {
+@media (min-width: 768px) and (not ((min-width: 900px) and (min-height: 640px) and (hover: hover) and (pointer: fine))) {
   html, body { height: 100%; overflow: hidden; }
   .is-device {
     display: block; position: fixed; inset: 0; box-sizing: border-box; padding: 8px;
@@ -351,6 +350,7 @@ button.is-class:hover { background: #f6f9ff; }
   .is-root { min-height: 100%; }
   .is-shell { min-height: 0; }
 }
+/* ===== Desktop phone frame (mouse + large window only; phones stay unframed, tablets get a slim bezel) ===== */
 @media (min-width: 900px) and (min-height: 640px) and (hover: hover) and (pointer: fine) {
   html, body { height: 100%; overflow: hidden; }
   body {
@@ -360,29 +360,26 @@ button.is-class:hover { background: #f6f9ff; }
       linear-gradient(160deg, #e7eeed, #d7e3e1);
   }
   .is-device {
-    --h: calc(100dvh - 76px);
     display: block; position: relative; inset: auto; box-sizing: border-box;
-    height: var(--h); width: min(calc(100vw - 72px), 1240px, calc(var(--h) * 1.62)); margin: 24px auto 0; padding: 9px 9px 11px;
-    border-radius: 18px 18px 6px 6px;
-    background: linear-gradient(160deg, #2a655f 0%, #164340 50%, #0e2f2c 100%);
-    box-shadow: 0 30px 60px rgba(8,36,33,.32), 0 8px 18px rgba(8,36,33,.2), inset 0 0 0 1px rgba(255,255,255,.14), inset 0 0 0 2px rgba(0,0,0,.25);
+    width: 414px; height: min(880px, calc(100dvh - 40px)); margin: 20px auto; padding: 12px; border-radius: 58px;
+    background: linear-gradient(155deg, #26605a 0%, #14403c 45%, #0d2d2a 100%);
+    box-shadow: 0 46px 90px rgba(8,36,33,.4), 0 14px 30px rgba(8,36,33,.25), inset 0 0 0 2px rgba(255,255,255,.12), inset 0 0 0 5px rgba(0,0,0,.28);
   }
-  /* camera */
-  .is-device::before { content: ""; position: absolute; z-index: 70; top: 3px; left: 50%; width: 5px; height: 5px; margin-left: -2.5px; border-radius: 50%; background: #06181a; box-shadow: 0 0 0 1px rgba(255,255,255,.12), inset 0 0 2px rgba(80,160,255,.55); }
-  /* base under the lid, with the thumb notch */
-  .is-device::after {
-    content: ""; position: absolute; left: -3.5%; right: -3.5%; bottom: -14px; height: 14px; border-radius: 2px 2px 20px 20px;
-    background: linear-gradient(#c3d0ce, #c3d0ce) center top / 16% 5px no-repeat, linear-gradient(180deg, #e3eae8 0%, #aab9b6 100%);
-    box-shadow: 0 14px 22px rgba(8,36,33,.28), inset 0 1px 0 rgba(255,255,255,.7);
-  }
-  .is-screen { display: block; position: relative; height: 100%; overflow: hidden; border-radius: 8px; background: #eaeff8; transform: translateZ(0); }
-  .is-scroll { display: block; height: 100%; overflow-x: hidden; overflow-y: auto; scroll-behavior: smooth; scrollbar-width: thin; scrollbar-color: rgba(20,33,79,.25) transparent; overscroll-behavior: contain; }
+  .is-device::before { content: ""; position: absolute; z-index: 70; top: 22px; left: 50%; width: 92px; height: 26px; margin-left: -46px; border-radius: 14px; background: #08201e; box-shadow: inset 0 0 0 1px rgba(255,255,255,.06); }
+  .is-device::after { content: ""; position: absolute; top: 168px; right: -4px; width: 4px; height: 68px; border-radius: 0 4px 4px 0; background: #0d2d2a; box-shadow: 0 -92px 0 0 #0d2d2a; }
+  .is-screen { display: block; position: relative; height: 100%; overflow: hidden; border-radius: 46px; background: #eaeff8; transform: translateZ(0); }
+  .is-scroll { display: block; height: 100%; overflow-x: hidden; overflow-y: auto; scroll-behavior: smooth; scrollbar-width: none; overscroll-behavior: contain; }
+  .is-scroll::-webkit-scrollbar { display: none; }
   .is-root { min-height: 100%; }
-  .is-shell { min-height: 0; }
+  .is-shell { min-height: 0; padding-top: 52px; padding-bottom: 116px; }
 }
-@media (min-width: 900px) and (min-height: 640px) and (hover: hover) and (pointer: fine) {
-  .is-campus-hero { height: 178px; }
-  .is-heading { font-size: 34px; }
-  .is-topbar { margin-bottom: 12px; }
-  .is-date-strip { margin: 12px 0 10px; }
-}
+
+/* sync chip, link button */
+.is-topbar-actions { display: flex; align-items: center; gap: 8px; }
+.is-sync-chip { position: relative; }
+.is-sync-chip.attention::after { position: absolute; top: 7px; right: 7px; width: 10px; height: 10px; border: 2px solid #fff; border-radius: 50%; background: var(--gold); content: ""; }
+.is-link-btn { display: block; width: 100%; min-height: 40px; margin: -4px 0 8px; padding: 0; border: 0; background: transparent; color: #6a7592; font-size: 12px; text-align: right; text-decoration: underline; cursor: pointer; }
+.is-brand { min-width: 0; }
+.is-brand-copy { min-width: 0; }
+.is-brand-sub { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+@media (max-width: 380px) { .is-brand-sub { letter-spacing: .03em; font-size: 10px; } .is-topbar-actions { gap: 6px; } }

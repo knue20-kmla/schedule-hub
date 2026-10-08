@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   BookOpen, CalendarDays, Check, ChevronDown, ChevronRight, Clock3, Download,
-  FileText, GraduationCap, Mail, Plus, RefreshCw, StickyNote, Trash2, UserRound, X,
+  Cloud, FileText, GraduationCap, Mail, Plus, RefreshCw, StickyNote, Trash2, UserRound, X,
 } from 'lucide-react';
 import {
   AuthError, dayKey, disconnect, fetchEvents, loadGis, readStoredToken, requestToken,
@@ -15,12 +15,14 @@ import {
   type EntryInfo, type Records, type SessionInfo, type Status,
 } from '@/lib/attendance';
 import { disconnectMail, readStoredMailToken, requestMailToken } from '@/lib/gmail';
+import { useDriveSync } from '@/lib/use-drive-sync';
+import type { SyncSnapshot, SyncTask } from '@/lib/drive-sync';
 import { AttendanceSheet } from '@/components/attendance-sheet';
 import { MailSheet } from '@/components/mail-sheet';
 
 type ScheduleFilter = '전체' | '캘린더' | '수업' | '학교' | '개인';
 type TaskCategory = '학교' | '개인';
-type PlannerTask = { id: number; title: string; detail: string; category: TaskCategory; done: boolean; start?: string; end?: string };
+type PlannerTask = { id: number; title: string; detail: string; category: TaskCategory; done: boolean; start?: string; end?: string; updatedAt?: number };
 
 const SAMPLE_KEYS = ['6', '7', '8', '9', '10'];
 function buildDays() {
@@ -96,6 +98,8 @@ const initialTasks: PlannerTask[] = [
 const STORAGE_TASKS = 'minjok-schedule.tasks.v1';
 const STORAGE_LINKED = 'minjok-schedule.google-linked.v1';
 const STORAGE_NOTE = 'minjok-schedule.note.v1';
+const STORAGE_NOTE_AT = 'minjok-schedule.note-at.v1';
+const STORAGE_DELETED = 'minjok-schedule.tasks-deleted.v1';
 
 function loadTasks(): PlannerTask[] {
   try {
@@ -120,6 +124,12 @@ function taskDetail(task: PlannerTask, state: 'on' | 'overdue' | 'off') {
   if (!task.start) return task.detail || '날짜 없음 · 매일 보여요';
   const range = taskEnd(task) !== task.start ? `${monthDay(task.start)} ~ ${monthDay(taskEnd(task))}` : monthDay(task.start);
   return state === 'overdue' ? `${range} · 기한이 지났어요` : range;
+}
+function loadDeleted(): Record<string, number> {
+  try { const parsed: unknown = JSON.parse(localStorage.getItem(STORAGE_DELETED) ?? '{}'); return parsed && typeof parsed === 'object' ? (parsed as Record<string, number>) : {}; } catch { return {}; }
+}
+function loadNoteAt() {
+  try { return Number(localStorage.getItem(STORAGE_NOTE_AT) ?? 0) || 0; } catch { return 0; }
 }
 function loadNote() {
   try { return localStorage.getItem(STORAGE_NOTE) ?? '오늘 과학 수행평가 초안 제출하기. 끝나면 서점에 들러서 새 노트 구경하기.'; }
@@ -151,6 +161,8 @@ export default function App() {
   const [tasks, setTasks] = useState<PlannerTask[]>(loadTasks);
   const [note, setNote] = useState(loadNote);
   const [noteDraft, setNoteDraft] = useState(note);
+  const [noteAt, setNoteAt] = useState(loadNoteAt);
+  const [deleted, setDeleted] = useState(loadDeleted);
   const [profileOpen, setProfileOpen] = useState(false);
   const [installEvent, setInstallEvent] = useState<InstallPrompt | null>(null);
   const [standalone, setStandalone] = useState(isStandalone);
@@ -219,6 +231,27 @@ export default function App() {
   useEffect(() => {
     try { localStorage.setItem(STORAGE_NOTE, note); } catch { /* Local-only app can still be used for this session. */ }
   }, [note]);
+  useEffect(() => {
+    try { localStorage.setItem(STORAGE_NOTE_AT, String(noteAt)); localStorage.setItem(STORAGE_DELETED, JSON.stringify(deleted)); } catch { /* Local-only app can still be used for this session. */ }
+  }, [noteAt, deleted]);
+
+  // Device sync (Google Drive app-data folder): tasks and the private memo only.
+  const sync = useDriveSync(
+    (): SyncSnapshot => ({ tasks: tasks as unknown as SyncTask[], deleted, note: { text: note, at: noteAt } }),
+    (merged) => {
+      setTasks(merged.tasks as unknown as PlannerTask[]);
+      setDeleted(merged.deleted);
+      setNote(merged.note.text);
+      setNoteAt(merged.note.at);
+    },
+    JSON.stringify([tasks, deleted, note, noteAt]),
+  );
+  const syncCaption = sync.status === 'syncing' ? '동기화 중…'
+    : sync.status === 'ok' ? `동기화됨 · ${new Date(sync.lastAt ?? Date.now()).toLocaleTimeString('ko-KR', { hour: 'numeric', minute: '2-digit' })}`
+    : sync.status === 'login' ? '다시 로그인하면 동기화돼요'
+    : sync.status === 'error' || sync.message ? sync.message
+    : sync.status === 'idle' ? '연결됨'
+    : '연결되지 않음 · 메모와 할 일이 이 기기에만 저장돼요';
 
   const visibleCalendarEvents = activeFilter === '개인' || activeFilter === '수업' ? [] : calendarEvents;
   const showTimetable = activeFilter === '전체' || activeFilter === '수업';
@@ -237,7 +270,7 @@ export default function App() {
     window.setTimeout(() => setNotice(''), 2300);
   }
   function toggleTask(id: number) {
-    setTasks((current) => current.map((task) => task.id === id ? { ...task, done: !task.done } : task));
+    setTasks((current) => current.map((task) => task.id === id ? { ...task, done: !task.done, updatedAt: Date.now() } : task));
     flash('작은 한 걸음, 잘 해냈어요.');
   }
   async function installApp() {
@@ -252,11 +285,13 @@ export default function App() {
     if (index < 0) return;
     setUndoTask({ task: tasks[index], index });
     setTasks((current) => current.filter((task) => task.id !== id));
+    setDeleted((current) => ({ ...current, [String(id)]: Date.now() }));
   }
   function restoreTask() {
     if (!undoTask) return;
     const { task, index } = undoTask;
-    setTasks((current) => { const next = [...current]; next.splice(Math.min(index, next.length), 0, task); return next; });
+    setTasks((current) => { const next = [...current]; next.splice(Math.min(index, next.length), 0, { ...task, updatedAt: Date.now() }); return next; });
+    setDeleted((current) => { const next = { ...current }; delete next[String(task.id)]; return next; });
     setUndoTask(null);
   }
   function openTaskForm() {
@@ -341,6 +376,7 @@ export default function App() {
     const saved = noteDraft.trim();
     if (!saved) { flash('메모 내용을 한 줄 적어주세요.'); return; }
     setNote(saved);
+    setNoteAt(Date.now());
     setNoteOpen(false);
     flash('나만의 메모에 저장했어요.');
   }
@@ -349,7 +385,7 @@ export default function App() {
     if (!title) return;
     const start = taskDated ? taskStart || selectedDay.key : undefined;
     const end = start && taskEndDraft > start ? taskEndDraft : undefined;
-    setTasks((current) => [{ id: Date.now(), title, detail: '', category: taskCategory, done: false, ...(start ? { start } : {}), ...(end ? { end } : {}) }, ...current]);
+    setTasks((current) => [{ id: Date.now(), title, detail: '', category: taskCategory, done: false, updatedAt: Date.now(), ...(start ? { start } : {}), ...(end ? { end } : {}) }, ...current]);
     setTaskDraft('');
     setTaskOpen(false);
     flash(start ? `${monthDay(start)}${end ? ` ~ ${monthDay(end)}` : ''} ${taskCategory} 할 일로 담았어요.` : `${taskCategory} 할 일로 담았어요. 날짜가 없어서 매일 보여요.`);
@@ -389,9 +425,14 @@ export default function App() {
                 <span className="is-brand-sub">MINJOK LEADERSHIP ACADEMY</span>
               </span>
             </div>
-            <button type="button" className="is-profile" aria-label="개인정보" data-testid="button-profile-notice" onClick={() => setProfileOpen(true)}>
-              <UserRound size={17} strokeWidth={1.7} />
-            </button>
+            <div className="is-topbar-actions">
+              {sync.linked && <button type="button" className={`is-profile is-sync-chip${sync.status === 'login' || sync.status === 'error' ? ' attention' : ''}`} aria-label={sync.status === 'login' ? '동기화하려면 눌러 로그인하세요' : '지금 동기화'} onClick={() => void sync.syncNow()} data-testid="button-sync-chip">
+                {sync.status === 'syncing' ? <RefreshCw size={16} className="is-spin" /> : <Cloud size={17} strokeWidth={1.7} />}
+              </button>}
+              <button type="button" className="is-profile" aria-label="개인정보" data-testid="button-profile-notice" onClick={() => setProfileOpen(true)}>
+                <UserRound size={17} strokeWidth={1.7} />
+              </button>
+            </div>
           </div>
           <section className="is-campus-hero" aria-label="민족사관고등학교 캠퍼스와 오늘의 일정">
             <img className="is-campus-photo" src={assetUrl('images/integrated-schedule-promo.jpg')} alt="나무 사이로 학교 건물과 동상이 보이는 민족사관고등학교 캠퍼스" data-testid="img-campus-photo" />
@@ -516,6 +557,12 @@ export default function App() {
             </div>
             {!standalone && installEvent && <button type="button" className="is-sync" onClick={() => void installApp()} aria-label="앱으로 설치" data-testid="button-install-app"><span>설치</span></button>}
           </div>
+          <div className="is-source-card" style={{ marginBottom: 10 }} data-testid="status-sync">
+            <span className="is-google-mark"><Cloud size={17} strokeWidth={1.8} /></span>
+            <div className="is-source-copy"><span className="is-source-title">기기 간 동기화</span><span className="is-source-caption" data-testid="text-sync-caption">{syncCaption}</span></div>
+            <button type="button" className="is-sync" onClick={() => void sync.syncNow()} disabled={sync.status === 'syncing'} aria-label={sync.linked ? '지금 동기화' : '구글 드라이브 연결'} data-testid="button-sync-now"><span>{sync.linked ? '지금 동기화' : '드라이브 연결'}</span></button>
+          </div>
+          {sync.linked && <button type="button" className="is-link-btn" onClick={sync.unlink} data-testid="button-sync-unlink">동기화 해제 (이 기기의 연결만 끊어요)</button>}
           <div className="is-source-card" data-testid="status-google-calendar">
             <span className="is-google-mark"><CalendarDays size={17} strokeWidth={1.8} /></span>
             <div className="is-source-copy"><span className="is-source-title">Google Calendar</span><span className="is-source-caption">{connected ? '연결됨 · 읽기 전용' : token ? '불러오는 중…' : linked ? '다시 연결이 필요해요' : '연결되지 않음 · 샘플 일정'}</span></div>
@@ -531,7 +578,7 @@ export default function App() {
               : <button type="button" className="is-sync" onClick={() => void connectMail()} disabled={mailBusy} aria-label="Gmail 연결" data-testid="button-mail-connect-profile"><span>{mailBusy ? '연결 중…' : 'Gmail 연결'}</span></button>}
           </div>
           <p className="is-modal-hint">일정은 읽기만 해요. 메일은 읽고 휴지통으로 옮기는 것만 하고, 보내거나 영구 삭제하지 않아요. 불러온 내용은 이 기기에서만 보이고 따로 저장하지 않아요.</p>
-          <p className="is-modal-hint">메모, 할 일, 출결 기록은 이 기기의 브라우저에 저장돼요. 출결은 시간표·출결부 앱과 같은 기록을 써요.</p>
+          <p className="is-modal-hint">메모와 할 일은 이 기기에 저장되고, 동기화를 켜면 내 구글 드라이브의 앱 전용 숨김 폴더를 통해 다른 기기와 맞춰져요. 출결 기록은 학생 정보가 있어서 동기화하지 않고 이 기기에만 저장돼요(시간표·출결부 앱과 같은 기록).</p>
         </section>
       </div>}
       {attendanceLesson && <AttendanceSheet
