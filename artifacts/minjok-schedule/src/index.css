@@ -85,7 +85,7 @@ button { -webkit-tap-highlight-color: transparent; }
 .is-note-card .is-note-preview { -webkit-line-clamp:3; }
 .is-weekend-empty { margin-top:0; }
 .is-columns { display:block; }.is-col { min-width:0; }
-@media (min-width:768px) {
+@media (min-width: 768px) and (not ((min-width: 900px) and (min-height: 640px) and (hover: hover) and (pointer: fine))) {
   .is-shell { max-width:1040px; padding-right:32px; padding-left:32px; }
   .is-campus-hero { height:210px; border-radius:26px; }
   .is-heading { font-size:34px; }
@@ -147,7 +147,7 @@ button.is-class:active { transform:scale(.97); }
 .is-mail-attach span { color:#8791a5; }
 .is-mail-connect { display:flex; flex-direction:column; align-items:center; gap:10px; padding:18px 6px 8px; color:var(--navy); text-align:center; }
 .is-mail-connect p { margin:0; color:#5e6a82; font-size:13px; line-height:1.6; }
-@media (min-width:768px) { .is-modal.is-sheet { width:min(100%,560px); } .is-att-btn { min-width:56px; } }
+@media (min-width: 768px) and (not ((min-width: 900px) and (min-height: 640px) and (hover: hover) and (pointer: fine))) { .is-modal.is-sheet { width:min(100%,560px); } .is-att-btn { min-width:56px; } }
 .is-mail-item { display:flex; align-items:stretch; border-bottom:1px solid #edf0f5; }
 .is-mail-item .is-mail-row { flex:1 1 auto; min-width:0; width:auto; border-bottom:0; }
 .is-mail-trash { flex:0 0 44px; display:grid; place-items:center; width:44px; border:0; background:transparent; color:#9a6a6a; cursor:pointer; }
@@ -291,7 +291,7 @@ button.is-class:hover { background: rgba(255,255,255,.17); }
 .is-mail-undo { background: var(--deep); }
 
 /* tablet: restate the sizes this block would otherwise override */
-@media (min-width: 768px) {
+@media (min-width: 768px) and (not ((min-width: 900px) and (min-height: 640px) and (hover: hover) and (pointer: fine))) {
   .is-campus-hero { height: 232px; border-radius: 30px; }
   .is-heading { font-size: 40px; }
   .is-bottom { width: min(100%, 560px); bottom: calc(14px + env(safe-area-inset-bottom)); border-radius: 30px; }
@@ -308,7 +308,7 @@ button.is-class:hover { background: rgba(255,255,255,.17); }
 @media (max-width: 340px) { .is-filter { font-size: 12px; letter-spacing: -.05em; } .is-filter-dot { display: none; } }
 
 /* tablet: filtered views (not 전체) use one centered column instead of a half-empty two-column grid */
-@media (min-width: 768px) {
+@media (min-width: 768px) and (not ((min-width: 900px) and (min-height: 640px) and (hover: hover) and (pointer: fine))) {
   .is-columns.single { display: block; max-width: 720px; margin: 0 auto; }
   .is-columns.single .is-col + .is-col > :first-child { margin-top: 18px; }
 }
@@ -329,3 +329,33 @@ button.is-class:hover { background: #f6f9ff; }
 .is-connect-status { background: #f7e3ad; color: #5a400a; }
 .is-timetable .is-empty-filter { border-color: #aebfe6; background: rgba(255,255,255,.65); color: #4f5c7a; }
 .is-class-row { margin: -2px -4px 0; padding: 2px 4px 12px; }
+
+/* ===== Filter tabs: a tinted track with a white "thumb" so they read differently from the date strip above ===== */
+.is-filter-row { background: linear-gradient(180deg, #dde5f4, #e6ecf8); box-shadow: inset 0 2px 6px rgba(20,33,79,.14), 0 1px 0 rgba(255,255,255,.7); }
+.is-filter { color: #46537a; }
+.is-filter.active { background: #fff; color: var(--deep); box-shadow: 0 4px 10px rgba(20,33,79,.2), 0 0 0 1px rgba(20,33,79,.06), inset 0 -3px 0 var(--gold); }
+
+/* ===== Desktop phone frame (mouse + large window only; real phones and tablets stay full-bleed) ===== */
+.is-device, .is-screen, .is-scroll { display: contents; }
+@media (min-width: 900px) and (min-height: 640px) and (hover: hover) and (pointer: fine) {
+  html, body { height: 100%; overflow: hidden; }
+  body {
+    background:
+      radial-gradient(50% 45% at 18% 8%, rgba(217,169,63,.2), transparent 70%),
+      radial-gradient(55% 50% at 88% 92%, rgba(25,95,88,.2), transparent 70%),
+      linear-gradient(160deg, #e7eeed, #d7e3e1);
+  }
+  .is-device {
+    display: block; position: relative; box-sizing: border-box;
+    width: 414px; height: min(880px, calc(100dvh - 40px)); margin: 20px auto; padding: 12px; border-radius: 58px;
+    background: linear-gradient(155deg, #26605a 0%, #14403c 45%, #0d2d2a 100%);
+    box-shadow: 0 46px 90px rgba(8,36,33,.4), 0 14px 30px rgba(8,36,33,.25), inset 0 0 0 2px rgba(255,255,255,.12), inset 0 0 0 5px rgba(0,0,0,.28);
+  }
+  .is-device::before { content: ""; position: absolute; z-index: 70; top: 22px; left: 50%; width: 92px; height: 26px; margin-left: -46px; border-radius: 14px; background: #08201e; box-shadow: inset 0 0 0 1px rgba(255,255,255,.06); }
+  .is-device::after { content: ""; position: absolute; top: 168px; right: -4px; width: 4px; height: 68px; border-radius: 0 4px 4px 0; background: #0d2d2a; box-shadow: 0 -92px 0 0 #0d2d2a; }
+  .is-screen { display: block; position: relative; height: 100%; overflow: hidden; border-radius: 46px; background: #eaeff8; transform: translateZ(0); }
+  .is-scroll { display: block; height: 100%; overflow-x: hidden; overflow-y: auto; scroll-behavior: smooth; scrollbar-width: none; overscroll-behavior: contain; }
+  .is-scroll::-webkit-scrollbar { display: none; }
+  .is-root { min-height: 100%; }
+  .is-shell { min-height: 0; padding-top: 52px; padding-bottom: 116px; }
+}

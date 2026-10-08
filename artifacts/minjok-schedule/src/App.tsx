@@ -368,12 +368,16 @@ export default function App() {
       document.getElementById('integrated-agenda')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
       flash('오늘의 일정을 확인해요.');
     } else {
-      window.scrollTo({ top: 0, behavior: 'smooth' });
+      // Inside the desktop phone frame the page scrolls in .is-scroll; on real phones/tablets it is the window.
+      const scroller = document.querySelector<HTMLElement>('.is-scroll');
+      if (scroller && getComputedStyle(scroller).display !== 'contents') scroller.scrollTo({ top: 0, behavior: 'smooth' });
+      else window.scrollTo({ top: 0, behavior: 'smooth' });
       flash('오늘의 흐름을 한곳에 모았어요.');
     }
   }
 
   return (
+    <div className="is-device"><div className="is-screen"><div className="is-scroll">
     <main className="is-root">
       <div className="is-shell">
         <header>
@@ -568,5 +572,6 @@ export default function App() {
         </form>
       </div>}
     </main>
+    </div></div></div>
   );
 }
