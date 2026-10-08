@@ -157,7 +157,6 @@ export function IntegratedSchedule() {
         .is-profile:active { transform:scale(.94); }
         .is-eyebrow { margin:0 0 5px; color:#63718e; font-size:11px; font-weight:700; letter-spacing:.07em; }
         .is-heading { margin:0; color:var(--deep); font-size:26px; line-height:1.3; letter-spacing:-.075em; font-weight:800; }
-        .is-heading em { color:var(--navy); font-style:normal; }
         .is-hello { display:flex; align-items:flex-end; justify-content:space-between; }
         .is-weather { display:flex; align-items:center; gap:5px; padding:7px 10px; margin-bottom:2px; border:1px solid #e5d7b7; border-radius:12px; background:#f5eedf; color:#665638; font-size:10px; font-weight:700; white-space:nowrap; }
         .is-date-strip { display:flex; justify-content:space-between; gap:6px; margin:17px 0 14px; padding:5px; border:1px solid rgba(213,221,234,.9); border-radius:18px; background:rgba(255,254,250,.62); }
@@ -207,6 +206,11 @@ export function IntegratedSchedule() {
         .is-class-time { color:#7d88a0; font-size:8px; font-variant-numeric:tabular-nums; }
         .is-class-name { color:#2b3c6b; font-size:10px; font-weight:750; letter-spacing:-.04em; }
         .is-class-room { color:#7c8799; font-size:8px; }
+        .is-timetable-note { margin:10px 1px 8px; color:#64718a; font-size:9px; line-height:1.5; }
+        .is-timetable-connect { display:flex; width:100%; min-height:36px; align-items:center; gap:7px; padding:0 10px; border:1px solid #cbd5e5; border-radius:10px; background:rgba(255,254,250,.74); color:#34466f; font:inherit; font-size:9px; font-weight:700; text-align:left; cursor:pointer; transition:transform .18s ease, background .18s ease; }
+        .is-timetable-connect:hover { transform:translateY(-1px); background:#fffefa; }
+        .is-timetable-connect:focus-visible { outline:2px solid var(--navy); outline-offset:2px; }
+        .is-connect-status { margin-left:auto; padding:4px 6px; border-radius:6px; background:#f3ead4; color:#725b2c; font-size:8px; font-weight:750; }
         .is-task-list { display:flex; flex-direction:column; gap:8px; }
         .is-task { display:flex; align-items:center; gap:10px; min-height:63px; padding:10px 11px; border:1px solid #e0e4eb; border-radius:15px; background:rgba(255,254,250,.88); transition:background .18s ease,transform .18s ease; }
         .is-task:active { transform:scale(.99); }
@@ -263,7 +267,7 @@ export function IntegratedSchedule() {
             <div className="is-brand">
               <img className="is-brand-mark" src="/__mockup/images/kmla-emblem.png" alt="민족사관고등학교 촛불 교표" />
               <span className="is-brand-copy">
-                <span className="is-brand-title">민사고 일정 허브</span>
+                <span className="is-brand-title">민사고 김태완</span>
                 <span className="is-brand-sub">MINJOK LEADERSHIP ACADEMY</span>
               </span>
             </div>
@@ -274,7 +278,7 @@ export function IntegratedSchedule() {
           <div className="is-hello">
             <div>
               <p className="is-eyebrow">10월 {selectedDay.date}일 {selectedDay.day}요일</p>
-              <h1 className="is-heading">오늘의 일정,<br /><em>한곳에서 차분히</em></h1>
+              <h1 className="is-heading">오늘의 일정</h1>
             </div>
             <div className="is-weather"><span>18°</span><span aria-hidden="true">·</span><span>구름 조금</span></div>
           </div>
@@ -373,7 +377,7 @@ export function IntegratedSchedule() {
           <section className="is-section is-timetable" aria-label="내 수업 시간표">
             <div className="is-timetable-head">
               <div className="is-timetable-label"><GraduationCap size={15} /> 내 수업 시간표</div>
-              <span className="is-class-tag">내가 등록한 수업</span>
+              <span className="is-class-tag">샘플 시간표</span>
             </div>
             <div className="is-class-row">
               {timetable.map((item) => (
@@ -384,6 +388,17 @@ export function IntegratedSchedule() {
                 </div>
               ))}
             </div>
+            <p className="is-timetable-note">실제 수업은 기존 시간표 웹앱 연결 후 불러올 예정이에요.</p>
+            <button
+              type="button"
+              className="is-timetable-connect"
+              onClick={() => flash("기존 수업 시간표 웹앱은 다음 단계에서 연결할게요.")}
+              aria-label="기존 수업 시간표 웹앱 연결은 추후 진행"
+            >
+              <BookOpen size={13} />
+              <span>기존 수업 시간표 웹앱</span>
+              <span className="is-connect-status">추후 연결</span>
+            </button>
           </section>
         )}
 
