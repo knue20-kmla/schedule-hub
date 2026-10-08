@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
-import { ArrowLeft, Mail, Paperclip, RefreshCw, X } from 'lucide-react';
+import { ArrowLeft, Mail, Paperclip, RefreshCw, Trash2, X } from 'lucide-react';
 import { AuthError, GoogleApiError, type AccessToken } from '@/lib/google-auth';
-import { getMail, listInbox, type MailDetail, type MailItem } from '@/lib/gmail';
+import { getMail, listInbox, trashMail, untrashMail, type MailDetail, type MailItem } from '@/lib/gmail';
 
 type Props = {
   token: AccessToken | null;
@@ -27,6 +27,13 @@ export function MailSheet({ token, connecting, onConnect, onExpired, onClose }: 
   const [error, setError] = useState('');
   const [openId, setOpenId] = useState<string | null>(null);
   const [detail, setDetail] = useState<MailDetail | null>(null);
+  const [undo, setUndo] = useState<{ id: string; subject: string } | null>(null);
+
+  useEffect(() => {
+    if (!undo) return undefined;
+    const timer = window.setTimeout(() => setUndo(null), 10000);
+    return () => window.clearTimeout(timer);
+  }, [undo]);
 
   const fail = useCallback((err: unknown) => {
     if (err instanceof AuthError) { onExpired(); return; }
@@ -34,7 +41,7 @@ export function MailSheet({ token, connecting, onConnect, onExpired, onClose }: 
       if (/accessNotConfigured|has not been used|is disabled|SERVICE_DISABLED/i.test(err.detail)) {
         setError('Google Cloud에서 Gmail API가 꺼져 있어요. API 및 서비스 → 라이브러리에서 Gmail API를 "사용"으로 켠 뒤, 1~2분 기다렸다가 새로고침해 주세요.');
       } else if (/insufficient|scope/i.test(err.detail)) {
-        setError('Gmail 읽기 권한이 허용되지 않았어요. 개인정보에서 Gmail 연결을 해제하고 다시 연결할 때, 권한 화면의 Gmail 항목을 체크해 주세요.');
+        setError('Gmail 권한이 허용되지 않았어요. 개인정보에서 Gmail 연결을 해제하고 다시 연결할 때, 권한 화면의 Gmail 항목(메일 읽기·휴지통 이동)을 체크해 주세요.');
       } else {
         setError(`Gmail이 요청을 거절했어요. (${err.detail || '403'})`);
       }
@@ -60,6 +67,25 @@ export function MailSheet({ token, connecting, onConnect, onExpired, onClose }: 
     try { setDetail(await getMail(token, id)); } catch (err) { fail(err); setOpenId(null); }
   }
 
+  // Moves one message to the Gmail Trash (recoverable for 30 days) after a confirmation.
+  async function moveToTrash(id: string, subject: string) {
+    if (!token) return;
+    if (!window.confirm(`"${subject}" 메일을 휴지통으로 옮길까요?\nGmail 휴지통에서 30일 안에 복구할 수 있어요.`)) return;
+    try {
+      await trashMail(token, id);
+      setItems((current) => current?.filter((item) => item.id !== id) ?? current);
+      if (openId === id) { setOpenId(null); setDetail(null); }
+      setError('');
+      setUndo({ id, subject });
+    } catch (err) { fail(err); }
+  }
+  async function undoTrash() {
+    if (!token || !undo) return;
+    const { id } = undo;
+    setUndo(null);
+    try { await untrashMail(token, id); await load(); } catch (err) { fail(err); }
+  }
+
   const unreadCount = items?.filter((item) => item.unread).length ?? 0;
 
   return (
@@ -76,10 +102,16 @@ export function MailSheet({ token, connecting, onConnect, onExpired, onClose }: 
         </div>
 
         <div className="is-sheet-body">
+          {undo && (
+            <div className="is-mail-undo" role="status" data-testid="status-mail-trashed">
+              <span>휴지통으로 옮겼어요</span>
+              <button type="button" onClick={() => void undoTrash()} data-testid="button-mail-undo">되돌리기</button>
+            </div>
+          )}
           {!token && (
             <div className="is-mail-connect">
               <Mail size={28} strokeWidth={1.5} />
-              <p>Gmail을 연결하면 받은편지함의 메일을 읽을 수 있어요.<br />읽기만 하고, 보내거나 지우거나 읽음 표시를 바꾸지 않아요.</p>
+              <p>Gmail을 연결하면 받은편지함의 메일을 읽고 휴지통으로 옮길 수 있어요.<br />메일을 보내거나 영구 삭제하지 않고, 읽음 표시도 바꾸지 않아요.</p>
               <button type="button" className="is-modal-submit" onClick={onConnect} disabled={connecting} data-testid="button-mail-connect">{connecting ? '연결 중…' : 'Gmail 연결'}</button>
             </div>
           )}
@@ -95,11 +127,14 @@ export function MailSheet({ token, connecting, onConnect, onExpired, onClose }: 
               {!error && items?.length === 0 && <div className="is-empty-filter" data-testid="status-no-mail">{unreadOnly ? '안 읽은 메일이 없어요.' : '받은 메일이 없어요.'}</div>}
               <div className="is-mail-list">
                 {items?.map((item) => (
-                  <button type="button" key={item.id} className={`is-mail-row${item.unread ? ' unread' : ''}`} onClick={() => void open(item.id)} data-testid={`mail-${item.id}`}>
-                    <span className="is-mail-top"><span className="is-mail-from">{item.from}</span><span className="is-mail-date">{formatDate(item.date)}</span></span>
-                    <span className="is-mail-subject">{item.subject}</span>
-                    <span className="is-mail-snippet">{item.snippet}</span>
-                  </button>
+                  <div className="is-mail-item" key={item.id}>
+                    <button type="button" className={`is-mail-row${item.unread ? ' unread' : ''}`} onClick={() => void open(item.id)} data-testid={`mail-${item.id}`}>
+                      <span className="is-mail-top"><span className="is-mail-from">{item.from}</span><span className="is-mail-date">{formatDate(item.date)}</span></span>
+                      <span className="is-mail-subject">{item.subject}</span>
+                      <span className="is-mail-snippet">{item.snippet}</span>
+                    </button>
+                    <button type="button" className="is-mail-trash" onClick={() => void moveToTrash(item.id, item.subject)} aria-label={`${item.subject} 휴지통으로 이동`} data-testid={`trash-${item.id}`}><Trash2 size={16} /></button>
+                  </div>
                 ))}
               </div>
             </>
@@ -116,6 +151,7 @@ export function MailSheet({ token, connecting, onConnect, onExpired, onClose }: 
                   {detail.to && <p className="is-mail-meta">받는 사람: {detail.to}</p>}
                   <pre className="is-mail-body">{detail.body}</pre>
                   {detail.attachments.length > 0 && <p className="is-mail-attach"><Paperclip size={13} /> 첨부파일 {detail.attachments.length}개: {detail.attachments.join(', ')} <span>(여기서는 열 수 없어요)</span></p>}
+                  <button type="button" className="is-mail-trash-wide" onClick={() => void moveToTrash(detail.id, detail.subject)} data-testid="button-mail-trash"><Trash2 size={15} /> 휴지통으로 이동</button>
                 </>
               )}
             </article>

@@ -1,12 +1,13 @@
-// Read-only Gmail access (gmail.readonly) from the browser. Messages are never modified, stored, or
-// rendered as HTML: bodies are converted to plain text before display.
+// Gmail access from the browser. The app reads messages and can move one to the Trash (and back); it never
+// sends mail, never deletes permanently, and never stores or renders message HTML (bodies become plain text).
+// gmail.modify is the narrowest Google scope that allows moving a message to the Trash.
 import {
-  googleGet, readStoredToken as readSlot, requestToken as requestSlot, revokeToken,
+  googleGet, googlePost, readStoredToken as readSlot, requestToken as requestSlot, revokeToken,
   type AccessToken,
 } from './google-auth';
 
-const SLOT = 'mail';
-const SCOPE = 'https://www.googleapis.com/auth/gmail.readonly';
+const SLOT = 'mailm';
+const SCOPE = 'https://www.googleapis.com/auth/gmail.modify';
 const API = 'https://gmail.googleapis.com/gmail/v1/users/me';
 
 export const readStoredMailToken = () => readSlot(SLOT);
@@ -50,6 +51,10 @@ export async function listInbox(token: AccessToken, options: { unreadOnly: boole
   })));
   return messages.map(toItem).sort((a, b) => b.date - a.date);
 }
+
+// Moves to the Trash (recoverable for 30 days in Gmail). Not a permanent delete.
+export const trashMail = (token: AccessToken, id: string) => googlePost<unknown>(SLOT, token, `${API}/messages/${id}/trash`);
+export const untrashMail = (token: AccessToken, id: string) => googlePost<unknown>(SLOT, token, `${API}/messages/${id}/untrash`);
 
 function decode(data: string, charset: string) {
   const binary = atob(data.replace(/-/g, '+').replace(/_/g, '/'));

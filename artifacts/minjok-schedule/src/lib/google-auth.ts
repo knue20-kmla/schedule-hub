@@ -90,10 +90,8 @@ export function revokeToken(slot: string, token: AccessToken | null) {
   if (token && isReady()) window.google!.accounts.oauth2.revoke(token.value);
 }
 
-export async function googleGet<T>(slot: string, token: AccessToken, url: string, params: Record<string, string | string[]> = {}): Promise<T> {
-  const query = new URLSearchParams();
-  Object.entries(params).forEach(([key, value]) => (Array.isArray(value) ? value : [value]).forEach((v) => query.append(key, v)));
-  const response = await fetch(`${url}?${query}`, { headers: { Authorization: `Bearer ${token.value}` } });
+async function send<T>(slot: string, token: AccessToken, url: string, method: 'GET' | 'POST'): Promise<T> {
+  const response = await fetch(url, { method, headers: { Authorization: `Bearer ${token.value}` } });
   if (response.status === 401) { storeToken(slot, null); throw new AuthError('expired'); }
   if (!response.ok) {
     let detail = '';
@@ -105,3 +103,11 @@ export async function googleGet<T>(slot: string, token: AccessToken, url: string
   }
   return response.json() as Promise<T>;
 }
+
+export function googleGet<T>(slot: string, token: AccessToken, url: string, params: Record<string, string | string[]> = {}): Promise<T> {
+  const query = new URLSearchParams();
+  Object.entries(params).forEach(([key, value]) => (Array.isArray(value) ? value : [value]).forEach((v) => query.append(key, v)));
+  return send<T>(slot, token, `${url}?${query}`, 'GET');
+}
+
+export const googlePost = <T>(slot: string, token: AccessToken, url: string) => send<T>(slot, token, url, 'POST');

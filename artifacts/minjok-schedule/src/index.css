@@ -148,3 +148,10 @@ button.is-class:active { transform:scale(.97); }
 .is-mail-connect { display:flex; flex-direction:column; align-items:center; gap:10px; padding:18px 6px 8px; color:var(--navy); text-align:center; }
 .is-mail-connect p { margin:0; color:#5e6a82; font-size:13px; line-height:1.6; }
 @media (min-width:768px) { .is-modal.is-sheet { width:min(100%,560px); } .is-att-btn { min-width:56px; } }
+.is-mail-item { display:flex; align-items:stretch; border-bottom:1px solid #edf0f5; }
+.is-mail-item .is-mail-row { flex:1 1 auto; min-width:0; width:auto; border-bottom:0; }
+.is-mail-trash { flex:0 0 44px; display:grid; place-items:center; width:44px; border:0; background:transparent; color:#9a6a6a; cursor:pointer; }
+.is-mail-trash:active { background:#f6e3e3; }
+.is-mail-trash-wide { display:flex; align-items:center; justify-content:center; gap:6px; width:100%; min-height:46px; margin-top:14px; border:1px solid #e3c4c4; border-radius:12px; background:#fbf1f1; color:#8e2c2c; font-size:13px; font-weight:700; cursor:pointer; }
+.is-mail-undo { position:sticky; top:0; z-index:2; display:flex; align-items:center; justify-content:space-between; gap:10px; margin:0 0 8px; padding:6px 6px 6px 14px; border-radius:12px; background:var(--deep); color:#fffdf7; font-size:13px; }
+.is-mail-undo button { min-height:44px; padding:0 12px; border:0; background:transparent; color:#f0dba7; font-size:13px; font-weight:800; cursor:pointer; }

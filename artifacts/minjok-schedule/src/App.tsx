@@ -443,12 +443,12 @@ export default function App() {
           </div>
           <div className="is-source-card" style={{ marginTop: 10 }} data-testid="status-gmail">
             <span className="is-google-mark"><Mail size={17} strokeWidth={1.8} /></span>
-            <div className="is-source-copy"><span className="is-source-title">Gmail</span><span className="is-source-caption">{mailToken ? '연결됨 · 읽기 전용' : '연결되지 않음'}</span></div>
+            <div className="is-source-copy"><span className="is-source-title">Gmail</span><span className="is-source-caption">{mailToken ? '연결됨 · 읽기와 휴지통 이동' : '연결되지 않음'}</span></div>
             {mailToken
               ? <button type="button" className="is-sync" onClick={unlinkMail} aria-label="Gmail 연결 해제" data-testid="button-mail-unlink"><span>연결 해제</span></button>
               : <button type="button" className="is-sync" onClick={() => void connectMail()} disabled={mailBusy} aria-label="Gmail 연결" data-testid="button-mail-connect-profile"><span>{mailBusy ? '연결 중…' : 'Gmail 연결'}</span></button>}
           </div>
-          <p className="is-modal-hint">일정과 메일은 읽기만 하고 수정하지 않아요. 불러온 내용은 이 기기에서만 보이고 따로 저장하지 않아요.</p>
+          <p className="is-modal-hint">일정은 읽기만 해요. 메일은 읽고 휴지통으로 옮기는 것만 하고, 보내거나 영구 삭제하지 않아요. 불러온 내용은 이 기기에서만 보이고 따로 저장하지 않아요.</p>
           <p className="is-modal-hint">메모, 할 일, 출결 기록은 이 기기의 브라우저에 저장돼요. 출결은 시간표·출결부 앱과 같은 기록을 써요.</p>
         </section>
       </div>}
