@@ -7,7 +7,8 @@ import {
 } from './google-auth';
 
 const SLOT = 'drive';
-const SCOPE = 'https://www.googleapis.com/auth/drive.appdata';
+export const DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive.appdata';
+const SCOPE = DRIVE_SCOPE;
 const FILES = 'https://www.googleapis.com/drive/v3/files';
 const UPLOAD = 'https://www.googleapis.com/upload/drive/v3/files';
 const FILE_NAME = 'schedule-hub-sync.json';

@@ -7,7 +7,7 @@ export const GOOGLE_CLIENT_ID: string =
 
 const GIS_SRC = 'https://accounts.google.com/gsi/client';
 
-type TokenResponse = { access_token?: string; expires_in?: number | string; error?: string };
+type TokenResponse = { access_token?: string; expires_in?: number | string; error?: string; scope?: string };
 type TokenClient = { requestAccessToken: (options?: { prompt?: string }) => void };
 type GoogleGlobal = {
   accounts: {
@@ -84,6 +84,32 @@ export function requestToken(slot: string, scope: string, prompt: '' | 'consent'
     client.requestAccessToken({ prompt });
   });
 }
+
+// One sign-in for several services: asks for the union of their scopes and stores the same token in each
+// slot whose scope was actually granted (the consent screen lets people untick individual permissions).
+export function requestTokenFor(slotScopes: Record<string, string>, prompt: '' | 'consent' | 'select_account' = ''): Promise<{ token: AccessToken; granted: string[] }> {
+  return new Promise((resolve, reject) => {
+    if (!isReady()) { reject(new Error('구글 로그인 스크립트가 아직 준비되지 않았어요.')); return; }
+    const scope = [...new Set(Object.values(slotScopes))].join(' ');
+    const client = window.google!.accounts.oauth2.initTokenClient({
+      client_id: GOOGLE_CLIENT_ID,
+      scope,
+      callback: (response) => {
+        if (response.error || !response.access_token) { reject(new Error(response.error ?? 'no_token')); return; }
+        const token = { value: response.access_token, expires: Date.now() + (Number(response.expires_in ?? 3600) - 60) * 1000 };
+        const grantedScopes = (response.scope ?? scope).split(/\s+/);
+        const granted = Object.entries(slotScopes).filter(([, s]) => grantedScopes.includes(s)).map(([slot]) => slot);
+        granted.forEach((slot) => storeToken(slot, token));
+        resolve({ token, granted });
+      },
+      error_callback: (error) => reject(new Error(error.type ?? 'popup_failed')),
+    });
+    client.requestAccessToken({ prompt });
+  });
+}
+
+export function clearSlot(slot: string) { storeToken(slot, null); }
+export function revokeAccessToken(token: AccessToken) { if (isReady()) window.google!.accounts.oauth2.revoke(token.value); }
 
 export function revokeToken(slot: string, token: AccessToken | null) {
   storeToken(slot, null);

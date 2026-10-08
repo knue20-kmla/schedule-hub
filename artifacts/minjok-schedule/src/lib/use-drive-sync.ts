@@ -1,9 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { AuthError, GoogleApiError, loadGis, type AccessToken } from './google-auth';
-import {
-  disconnectDrive, readStoredDriveToken, requestDriveToken, syncOnce,
-  type SyncSnapshot,
-} from './drive-sync';
+import { readStoredDriveToken, syncOnce, type SyncSnapshot } from './drive-sync';
 
 export type SyncStatus = 'off' | 'login' | 'idle' | 'syncing' | 'ok' | 'error';
 
@@ -50,34 +47,28 @@ export function useDriveSync(getSnapshot: () => SyncSnapshot, apply: (snapshot: 
     } finally { busy.current = false; }
   }, []);
 
-  // Must run from a click so the sign-in popup is allowed.
-  const connect = useCallback(async () => {
-    if (!gisReady.current) { setMessage('구글 로그인을 준비하고 있어요. 잠시 뒤 다시 눌러 주세요.'); void loadGis().then(() => { gisReady.current = true; }); return; }
-    try {
-      const fresh = await requestDriveToken('');
-      setToken(fresh);
-      setLinked(true);
-      writeLinked(true);
-      await run(fresh);
-    } catch (error) {
-      const reason = error instanceof Error ? error.message : '';
-      setStatus(readLinked() ? 'login' : 'off');
-      setMessage(reason === 'popup_closed' || reason === 'access_denied' ? '연결을 취소했어요.' : reason === 'popup_failed_to_open' ? '팝업이 막혀 있어요. 팝업을 허용하고 다시 눌러 주세요.' : '구글 연결에 실패했어요. 잠시 뒤 다시 시도해 주세요.');
-    }
+  // The sign-in itself happens once for all services (see connect.ts); this just receives the token.
+  const adoptToken = useCallback((fresh: AccessToken) => {
+    setToken(fresh);
+    setLinked(true);
+    writeLinked(true);
+    void run(fresh);
   }, [run]);
 
   const syncNow = useCallback(async () => {
-    if (token) await run(token); else await connect();
-  }, [token, run, connect]);
+    if (token) await run(token);
+  }, [token, run]);
+
+  // Called when the token's lifetime ran out, so the UI can ask for a new sign-in.
+  const invalidate = useCallback(() => { setToken(null); setStatus((current) => (current === 'off' ? current : 'login')); }, []);
 
   const unlink = useCallback(() => {
-    disconnectDrive(token);
     setToken(null);
     setLinked(false);
     writeLinked(false);
     setStatus('off');
     setMessage('');
-  }, [token]);
+  }, []);
 
   // Sync once when the app opens (if signed in), and when it comes back to the foreground.
   useEffect(() => { if (token) void run(token); }, []); // eslint-disable-line react-hooks/exhaustive-deps
@@ -99,5 +90,5 @@ export function useDriveSync(getSnapshot: () => SyncSnapshot, apply: (snapshot: 
     return () => window.clearTimeout(timer);
   }, [changeKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  return { linked, status, message, lastAt, token, connect, syncNow, unlink };
+  return { linked, status, message, lastAt, token, adoptToken, syncNow, unlink, invalidate };
 }

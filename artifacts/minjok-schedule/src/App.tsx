@@ -14,7 +14,8 @@ import {
   STORAGE_KEY as ATTENDANCE_KEY, clearSession, countMarked, loadRecords, toggleStatus,
   type EntryInfo, type Records, type SessionInfo, type Status,
 } from '@/lib/attendance';
-import { disconnectMail, readStoredMailToken, requestMailToken } from '@/lib/gmail';
+import { readStoredMailToken } from '@/lib/gmail';
+import { releaseService, requestServices, serviceLabel, type Service } from '@/lib/connect';
 import { useDriveSync } from '@/lib/use-drive-sync';
 import type { SyncSnapshot, SyncTask } from '@/lib/drive-sync';
 import { AttendanceSheet } from '@/components/attendance-sheet';
@@ -97,6 +98,7 @@ const initialTasks: PlannerTask[] = [
 ];
 const STORAGE_TASKS = 'minjok-schedule.tasks.v1';
 const STORAGE_LINKED = 'minjok-schedule.google-linked.v1';
+const STORAGE_MAIL_LINKED = 'minjok-schedule.mail-linked.v1';
 const STORAGE_NOTE = 'minjok-schedule.note.v1';
 const STORAGE_NOTE_AT = 'minjok-schedule.note-at.v1';
 const STORAGE_DELETED = 'minjok-schedule.tasks-deleted.v1';
@@ -156,7 +158,9 @@ export default function App() {
   const [attendancePeriod, setAttendancePeriod] = useState<number | null>(null);
   const [mailOpen, setMailOpen] = useState(false);
   const [mailToken, setMailToken] = useState<AccessToken | null>(readStoredMailToken);
-  const [mailBusy, setMailBusy] = useState(false);
+  const [mailLinked, setMailLinked] = useState(() => { try { return localStorage.getItem(STORAGE_MAIL_LINKED) === '1'; } catch { return false; } });
+  const [reconnecting, setReconnecting] = useState(false);
+  const [promptDismissed, setPromptDismissed] = useState(false);
   const [activeFilter, setActiveFilter] = useState<ScheduleFilter>('전체');
   const [tasks, setTasks] = useState<PlannerTask[]>(loadTasks);
   const [note, setNote] = useState(loadNote);
@@ -318,30 +322,78 @@ export default function App() {
     if (!token || calendarBusy) return;
     if (await loadCalendar(token)) flash('학교 일정을 새로 불러왔어요.');
   }
-  async function connectGoogle() {
-    if (calendarBusy) return;
-    if (token) { if (await loadCalendar(token)) flash('구글 캘린더를 새로 불러왔어요.'); return; }
+  const tokensNow = (): Record<Service, AccessToken | null> => ({ cal: token, mail: mailToken, drive: sync.token });
+  const anyLinked = linked || mailLinked || sync.linked;
+  const needsLogin = (linked && !token) || (mailLinked && !mailToken) || (sync.linked && !sync.token);
+
+  // One sign-in renews every linked service at once (and adds `add` when connecting a new one).
+  async function reconnect(add?: Service) {
+    if (reconnecting) return;
     if (!gisReady.current) { flash('구글 로그인을 준비하고 있어요. 잠시 뒤 다시 눌러 주세요.'); void loadGis().then(() => { gisReady.current = true; }).catch(() => flash('인터넷 연결을 확인해 주세요.')); return; }
+    const wanted = new Set<Service>();
+    if (linked) wanted.add('cal');
+    if (mailLinked) wanted.add('mail');
+    if (sync.linked) wanted.add('drive');
+    if (add) wanted.add(add);
+    setReconnecting(true);
     try {
-      const fresh = await requestToken(linked ? '' : 'consent');
-      setToken(fresh);
-      setLinked(true);
-      try { localStorage.setItem(STORAGE_LINKED, '1'); } catch { /* Optional hint only. */ }
-      if (await loadCalendar(fresh)) flash('구글 캘린더를 연결했어요.');
+      const { token: fresh, granted } = await requestServices([...wanted]);
+      if (granted.includes('cal')) {
+        setToken(fresh); setLinked(true);
+        try { localStorage.setItem(STORAGE_LINKED, '1'); } catch { /* Optional hint only. */ }
+        void loadCalendar(fresh);
+      }
+      if (granted.includes('mail')) {
+        setMailToken(fresh); setMailLinked(true);
+        try { localStorage.setItem(STORAGE_MAIL_LINKED, '1'); } catch { /* Optional hint only. */ }
+      }
+      if (granted.includes('drive')) sync.adoptToken(fresh);
+      const missing = [...wanted].filter((service) => !granted.includes(service));
+      if (missing.length) flash(`${missing.map(serviceLabel).join(', ')} 권한은 허용되지 않았어요. 권한 화면에서 모두 체크해 주세요.`);
+      else flash(add && !wanted.has(add) ? '연결했어요.' : add ? `${serviceLabel(add)} 연결 완료` : '다시 연결했어요.');
     } catch (error) {
       const reason = error instanceof Error ? error.message : '';
       if (reason === 'popup_closed' || reason === 'access_denied') flash('연결을 취소했어요.');
       else if (reason === 'popup_failed_to_open') flash('팝업이 막혀 있어요. 팝업을 허용하고 다시 눌러 주세요.');
       else flash('구글 연결에 실패했어요. 잠시 뒤 다시 시도해 주세요.');
-    }
+    } finally { setReconnecting(false); }
+  }
+  // The sign-in lasts about an hour: notice when it runs out (also after the app was in the background).
+  const expireStale = () => {
+    const now = Date.now();
+    if (token && token.expires <= now) setToken(null);
+    if (mailToken && mailToken.expires <= now) setMailToken(null);
+    if (sync.token && sync.token.expires <= now) sync.invalidate();
+  };
+  useEffect(() => {
+    const live = [token, mailToken, sync.token].filter((t): t is AccessToken => Boolean(t));
+    const onVisible = () => { if (document.visibilityState === 'visible') expireStale(); };
+    document.addEventListener('visibilitychange', onVisible);
+    if (!live.length) return () => document.removeEventListener('visibilitychange', onVisible);
+    const timer = window.setTimeout(expireStale, Math.max(Math.min(...live.map((t) => t.expires)) - Date.now(), 0) + 500);
+    return () => { window.clearTimeout(timer); document.removeEventListener('visibilitychange', onVisible); };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token, mailToken, sync.token]);
+  useEffect(() => { if (!needsLogin) setPromptDismissed(false); }, [needsLogin]);
+  const lostServices = [linked && !token ? 'cal' : '', mailLinked && !mailToken ? 'mail' : '', sync.linked && !sync.token ? 'drive' : ''].filter(Boolean) as Service[];
+  const showReconnect = needsLogin && !promptDismissed && !reconnecting;
+
+  async function connectGoogle() {
+    if (calendarBusy) return;
+    if (token) { if (await loadCalendar(token)) flash('구글 캘린더를 새로 불러왔어요.'); return; }
+    await reconnect('cal');
   }
   function unlinkGoogle() {
-    disconnect(token);
+    releaseService('cal', tokensNow());
     setToken(null);
     setLiveEvents(null);
     setLinked(false);
     try { localStorage.removeItem(STORAGE_LINKED); } catch { /* Optional hint only. */ }
     flash('구글 캘린더 연결을 해제했어요. 샘플 일정으로 돌아가요.');
+  }
+  function unlinkDrive() {
+    releaseService('drive', tokensNow());
+    sync.unlink();
   }
   function changeAttendance(apply: () => Records) {
     try { setRecords(apply()); } catch { flash('이 기기에 출결을 저장하지 못했어요. 브라우저 저장 공간을 확인해 주세요.'); }
@@ -352,23 +404,12 @@ export default function App() {
   function clearAttendance() {
     if (attendanceLesson && window.confirm('이 수업의 출결 기록을 모두 지울까요?')) changeAttendance(() => clearSession(sessionOf(attendanceLesson)));
   }
-  async function connectMail() {
-    if (mailBusy) return;
-    if (!gisReady.current) { flash('구글 로그인을 준비하고 있어요. 잠시 뒤 다시 눌러 주세요.'); void loadGis().then(() => { gisReady.current = true; }).catch(() => flash('인터넷 연결을 확인해 주세요.')); return; }
-    setMailBusy(true);
-    try {
-      setMailToken(await requestMailToken(''));
-      flash('Gmail을 연결했어요.');
-    } catch (error) {
-      const reason = error instanceof Error ? error.message : '';
-      if (reason === 'popup_closed' || reason === 'access_denied') flash('연결을 취소했어요.');
-      else if (reason === 'popup_failed_to_open') flash('팝업이 막혀 있어요. 팝업을 허용하고 다시 눌러 주세요.');
-      else flash('Gmail 연결에 실패했어요. 잠시 뒤 다시 시도해 주세요.');
-    } finally { setMailBusy(false); }
-  }
+  async function connectMail() { await reconnect('mail'); }
   function unlinkMail() {
-    disconnectMail(mailToken);
+    releaseService('mail', tokensNow());
     setMailToken(null);
+    setMailLinked(false);
+    try { localStorage.removeItem(STORAGE_MAIL_LINKED); } catch { /* Optional hint only. */ }
     flash('Gmail 연결을 해제했어요.');
   }
   function closeMail() { setMailOpen(false); setNav('오늘'); }
@@ -426,8 +467,8 @@ export default function App() {
               </span>
             </div>
             <div className="is-topbar-actions">
-              {sync.linked && <button type="button" className={`is-profile is-sync-chip${sync.status === 'login' || sync.status === 'error' ? ' attention' : ''}`} aria-label={sync.status === 'login' ? '동기화하려면 눌러 로그인하세요' : '지금 동기화'} onClick={() => void sync.syncNow()} data-testid="button-sync-chip">
-                {sync.status === 'syncing' ? <RefreshCw size={16} className="is-spin" /> : <Cloud size={17} strokeWidth={1.7} />}
+              {anyLinked && <button type="button" className={`is-profile is-sync-chip${needsLogin || sync.status === 'error' ? ' attention' : ''}`} aria-label={needsLogin ? '다시 연결 (캘린더·Gmail·드라이브를 한 번에)' : '지금 동기화'} onClick={() => { if (needsLogin) void reconnect(); else if (sync.linked) void sync.syncNow(); else if (token) void refreshCalendar(); }} data-testid="button-sync-chip">
+                {sync.status === 'syncing' || reconnecting ? <RefreshCw size={16} className="is-spin" /> : <Cloud size={17} strokeWidth={1.7} />}
               </button>}
               <button type="button" className="is-profile" aria-label="개인정보" data-testid="button-profile-notice" onClick={() => setProfileOpen(true)}>
                 <UserRound size={17} strokeWidth={1.7} />
@@ -543,6 +584,11 @@ export default function App() {
           { label: '메모', icon: <FileText size={17} strokeWidth={1.8} /> },
         ].map((item) => <button type="button" key={item.label} className={`is-nav${nav === item.label ? ' active' : ''}`} onClick={() => chooseNav(item.label)} aria-label={`${item.label} 보기`} data-testid={`nav-${item.label}`}><span className="is-nav-icon">{item.icon}</span>{item.label}</button>)}
       </nav>
+      {showReconnect && <div className="is-reconnect" role="alertdialog" aria-label="구글 연결이 풀렸어요" data-testid="prompt-reconnect">
+        <div className="is-reconnect-text"><strong>구글 연결이 풀렸어요</strong><span>{lostServices.map(serviceLabel).join("·")} 연결을 한 번에 다시 할까요?</span></div>
+        <button type="button" className="is-reconnect-go" onClick={() => void reconnect()} data-testid="button-reconnect-go">다시 연결</button>
+        <button type="button" className="is-reconnect-later" onClick={() => setPromptDismissed(true)} data-testid="button-reconnect-later">나중에</button>
+      </div>}
       {undoTask && <div className="is-toast is-toast-action" role="status" data-testid="status-task-deleted"><span>할 일을 삭제했어요</span><button type="button" onClick={restoreTask} data-testid="button-undo-delete">되돌리기</button></div>}
       {notice && <div className="is-toast" role="status" aria-live="polite" data-testid="status-toast">{notice}</div>}
 
@@ -560,9 +606,9 @@ export default function App() {
           <div className="is-source-card" style={{ marginBottom: 10 }} data-testid="status-sync">
             <span className="is-google-mark"><Cloud size={17} strokeWidth={1.8} /></span>
             <div className="is-source-copy"><span className="is-source-title">기기 간 동기화</span><span className="is-source-caption" data-testid="text-sync-caption">{syncCaption}</span></div>
-            <button type="button" className="is-sync" onClick={() => void sync.syncNow()} disabled={sync.status === 'syncing'} aria-label={sync.linked ? '지금 동기화' : '구글 드라이브 연결'} data-testid="button-sync-now"><span>{sync.linked ? '지금 동기화' : '드라이브 연결'}</span></button>
+            <button type="button" className="is-sync" onClick={() => { if (sync.token) void sync.syncNow(); else void reconnect('drive'); }} disabled={sync.status === 'syncing' || reconnecting} aria-label={sync.linked ? '지금 동기화' : '구글 드라이브 연결'} data-testid="button-sync-now"><span>{sync.token ? '지금 동기화' : sync.linked ? '다시 연결' : '드라이브 연결'}</span></button>
           </div>
-          {sync.linked && <button type="button" className="is-link-btn" onClick={sync.unlink} data-testid="button-sync-unlink">동기화 해제 (이 기기의 연결만 끊어요)</button>}
+          {sync.linked && <button type="button" className="is-link-btn" onClick={unlinkDrive} data-testid="button-sync-unlink">동기화 해제 (이 기기의 연결만 끊어요)</button>}
           <div className="is-source-card" data-testid="status-google-calendar">
             <span className="is-google-mark"><CalendarDays size={17} strokeWidth={1.8} /></span>
             <div className="is-source-copy"><span className="is-source-title">Google Calendar</span><span className="is-source-caption">{connected ? '연결됨 · 읽기 전용' : token ? '불러오는 중…' : linked ? '다시 연결이 필요해요' : '연결되지 않음 · 샘플 일정'}</span></div>
@@ -572,11 +618,12 @@ export default function App() {
           </div>
           <div className="is-source-card" style={{ marginTop: 10 }} data-testid="status-gmail">
             <span className="is-google-mark"><Mail size={17} strokeWidth={1.8} /></span>
-            <div className="is-source-copy"><span className="is-source-title">Gmail</span><span className="is-source-caption">{mailToken ? '연결됨 · 읽기와 휴지통 이동' : '연결되지 않음'}</span></div>
+            <div className="is-source-copy"><span className="is-source-title">Gmail</span><span className="is-source-caption">{mailToken ? '연결됨 · 읽기와 휴지통 이동' : mailLinked ? '다시 연결이 필요해요' : '연결되지 않음'}</span></div>
             {mailToken
               ? <button type="button" className="is-sync" onClick={unlinkMail} aria-label="Gmail 연결 해제" data-testid="button-mail-unlink"><span>연결 해제</span></button>
-              : <button type="button" className="is-sync" onClick={() => void connectMail()} disabled={mailBusy} aria-label="Gmail 연결" data-testid="button-mail-connect-profile"><span>{mailBusy ? '연결 중…' : 'Gmail 연결'}</span></button>}
+              : <button type="button" className="is-sync" onClick={() => void connectMail()} disabled={reconnecting} aria-label="Gmail 연결" data-testid="button-mail-connect-profile"><span>{reconnecting ? '연결 중…' : mailLinked ? '다시 연결' : 'Gmail 연결'}</span></button>}
           </div>
+          <p className="is-modal-hint">연결한 서비스(캘린더·Gmail·드라이브)는 로그인이 풀리면 위쪽 구름 아이콘 한 번으로 한꺼번에 다시 연결돼요.</p>
           <p className="is-modal-hint">일정은 읽기만 해요. 메일은 읽고 휴지통으로 옮기는 것만 하고, 보내거나 영구 삭제하지 않아요. 불러온 내용은 이 기기에서만 보이고 따로 저장하지 않아요.</p>
           <p className="is-modal-hint">메모와 할 일은 이 기기에 저장되고, 동기화를 켜면 내 구글 드라이브의 앱 전용 숨김 폴더를 통해 다른 기기와 맞춰져요. 출결 기록은 학생 정보가 있어서 동기화하지 않고 이 기기에만 저장돼요(시간표·출결부 앱과 같은 기록).</p>
         </section>
@@ -591,7 +638,7 @@ export default function App() {
         onClear={clearAttendance}
         onClose={() => setAttendancePeriod(null)}
       />}
-      {mailOpen && <MailSheet token={mailToken} connecting={mailBusy} onConnect={() => void connectMail()} onExpired={() => { setMailToken(null); flash('Gmail 로그인이 만료됐어요. 다시 연결해 주세요.'); }} onClose={closeMail} />}
+      {mailOpen && <MailSheet token={mailToken} connecting={reconnecting} onConnect={() => void connectMail()} onExpired={() => { setMailToken(null); flash('Gmail 로그인이 만료됐어요. 다시 연결해 주세요.'); }} onClose={closeMail} />}
       {noteOpen && <div className="is-modal-backdrop" onClick={(event) => { if (event.target === event.currentTarget) setNoteOpen(false); }}>
         <form className="is-modal" aria-label="메모 편집" onSubmit={(event) => { event.preventDefault(); saveNote(); }}>
           <div className="is-modal-head"><h2 className="is-modal-title">나만 보는 메모</h2><button type="button" className="is-close" aria-label="닫기" onClick={() => setNoteOpen(false)} data-testid="button-close-note"><X size={17} /></button></div>

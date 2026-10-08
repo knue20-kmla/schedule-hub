@@ -383,3 +383,11 @@ button.is-class:hover { background: #f6f9ff; }
 .is-brand-copy { min-width: 0; }
 .is-brand-sub { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 @media (max-width: 380px) { .is-brand-sub { letter-spacing: .03em; font-size: 10px; } .is-topbar-actions { gap: 6px; } }
+
+/* reconnect prompt */
+.is-reconnect { position: fixed; z-index: 9; top: calc(10px + env(safe-area-inset-top)); left: 12px; right: 12px; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 6px; align-items: center; max-width: 460px; margin: 0 auto; padding: 12px 8px 8px 16px; border: 1px solid rgba(217,169,63,.55); border-radius: 20px; background: var(--deep); color: #fffdf7; box-shadow: 0 16px 34px rgba(8,16,48,.35); animation: is-fade .25s ease both; }
+.is-reconnect-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.is-reconnect-text strong { font-size: 14px; font-weight: 850; }
+.is-reconnect-text span { color: rgba(255,255,255,.8); font-size: 12px; }
+.is-reconnect-go { min-height: 44px; padding: 0 14px; border: 0; border-radius: 14px; background: var(--gold-soft); color: #3a2a05; font-size: 13px; font-weight: 850; cursor: pointer; }
+.is-reconnect-later { grid-column: 1 / -1; min-height: 40px; border: 0; background: transparent; color: rgba(255,255,255,.7); font-size: 12px; text-decoration: underline; cursor: pointer; }

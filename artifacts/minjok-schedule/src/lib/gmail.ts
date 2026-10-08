@@ -7,7 +7,8 @@ import {
 } from './google-auth';
 
 const SLOT = 'mailm';
-const SCOPE = 'https://www.googleapis.com/auth/gmail.modify';
+export const MAIL_SCOPE = 'https://www.googleapis.com/auth/gmail.modify';
+const SCOPE = MAIL_SCOPE;
 const API = 'https://gmail.googleapis.com/gmail/v1/users/me';
 
 export const readStoredMailToken = () => readSlot(SLOT);

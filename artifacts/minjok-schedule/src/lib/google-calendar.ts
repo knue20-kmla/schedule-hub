@@ -8,7 +8,8 @@ export { AuthError, loadGis };
 export type { AccessToken };
 
 const SLOT = 'cal';
-const SCOPE = 'https://www.googleapis.com/auth/calendar.readonly';
+export const CAL_SCOPE = 'https://www.googleapis.com/auth/calendar.readonly';
+const SCOPE = CAL_SCOPE;
 const API = 'https://www.googleapis.com/calendar/v3';
 
 export type LiveEvent = { id: string; dayKey: string; sort: string; time: string; title: string; note: string; tag: string };
