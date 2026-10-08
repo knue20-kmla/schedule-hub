@@ -1,107 +1,28 @@
-// Read-only Google Calendar access from the browser (Google Identity Services token flow).
-// The OAuth client ID is public by design; no client secret is used or needed.
+// Read-only Google Calendar access from the browser (see google-auth.ts for the sign-in flow).
+import {
+  AuthError, googleGet, loadGis, readStoredToken as readSlot, requestToken as requestSlot, revokeToken,
+  type AccessToken,
+} from './google-auth';
 
-export const GOOGLE_CLIENT_ID: string =
-  import.meta.env.VITE_GOOGLE_CLIENT_ID ??
-  '828976910521-clsh5dom9ms4e6ha7lduqldst6n37j5i.apps.googleusercontent.com';
+export { AuthError, loadGis };
+export type { AccessToken };
 
+const SLOT = 'cal';
 const SCOPE = 'https://www.googleapis.com/auth/calendar.readonly';
-const GIS_SRC = 'https://accounts.google.com/gsi/client';
-const TOKEN_KEY = 'minjok-schedule.gtoken.v1';
 const API = 'https://www.googleapis.com/calendar/v3';
 
-type TokenResponse = { access_token?: string; expires_in?: number | string; error?: string };
-type TokenClient = { requestAccessToken: (options?: { prompt?: string }) => void };
-type GoogleGlobal = {
-  accounts: {
-    oauth2: {
-      initTokenClient: (config: {
-        client_id: string;
-        scope: string;
-        callback: (response: TokenResponse) => void;
-        error_callback?: (error: { type?: string }) => void;
-      }) => TokenClient;
-      revoke: (token: string, done?: () => void) => void;
-    };
-  };
-};
-declare global {
-  interface Window { google?: GoogleGlobal }
-}
-
-export type AccessToken = { value: string; expires: number };
 export type LiveEvent = { id: string; dayKey: string; sort: string; time: string; title: string; note: string; tag: string };
-
-export class AuthError extends Error {}
 
 export function dayKey(date: Date) {
   const pad = (n: number) => String(n).padStart(2, '0');
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
 }
 
-function isReady() { return Boolean(window.google?.accounts?.oauth2); }
+export const readStoredToken = () => readSlot(SLOT);
+export const requestToken = (prompt: '' | 'consent' | 'select_account' = '') => requestSlot(SLOT, SCOPE, prompt);
+export const disconnect = (token: AccessToken | null) => revokeToken(SLOT, token);
 
-let gisLoading: Promise<void> | null = null;
-export function loadGis(): Promise<void> {
-  if (isReady()) return Promise.resolve();
-  if (gisLoading) return gisLoading;
-  gisLoading = new Promise<void>((resolve, reject) => {
-    const script = document.createElement('script');
-    script.src = GIS_SRC;
-    script.async = true;
-    script.onload = () => resolve();
-    script.onerror = () => { gisLoading = null; script.remove(); reject(new Error('구글 로그인 스크립트를 불러오지 못했어요.')); };
-    document.head.appendChild(script);
-  });
-  return gisLoading;
-}
-
-export function readStoredToken(): AccessToken | null {
-  try {
-    const raw = sessionStorage.getItem(TOKEN_KEY);
-    if (!raw) return null;
-    const token = JSON.parse(raw) as AccessToken;
-    return token.value && token.expires > Date.now() ? token : null;
-  } catch { return null; }
-}
-function storeToken(token: AccessToken | null) {
-  try {
-    if (token) sessionStorage.setItem(TOKEN_KEY, JSON.stringify(token));
-    else sessionStorage.removeItem(TOKEN_KEY);
-  } catch { /* The token only lives for this tab anyway. */ }
-}
-
-// Call from a click handler, with the script already loaded, so the browser allows the popup.
-export function requestToken(prompt: '' | 'consent' | 'select_account' = ''): Promise<AccessToken> {
-  return new Promise((resolve, reject) => {
-    if (!isReady()) { reject(new Error('구글 로그인 스크립트가 아직 준비되지 않았어요.')); return; }
-    const client = window.google!.accounts.oauth2.initTokenClient({
-      client_id: GOOGLE_CLIENT_ID,
-      scope: SCOPE,
-      callback: (response) => {
-        if (response.error || !response.access_token) { reject(new Error(response.error ?? 'no_token')); return; }
-        const token = { value: response.access_token, expires: Date.now() + (Number(response.expires_in ?? 3600) - 60) * 1000 };
-        storeToken(token);
-        resolve(token);
-      },
-      error_callback: (error) => reject(new Error(error.type ?? 'popup_failed')),
-    });
-    client.requestAccessToken({ prompt });
-  });
-}
-
-export function disconnect(token: AccessToken | null) {
-  storeToken(null);
-  if (token && isReady()) window.google!.accounts.oauth2.revoke(token.value);
-}
-
-async function api<T>(token: AccessToken, path: string, params: Record<string, string> = {}): Promise<T> {
-  const url = `${API}${path}?${new URLSearchParams(params)}`;
-  const response = await fetch(url, { headers: { Authorization: `Bearer ${token.value}` } });
-  if (response.status === 401) { storeToken(null); throw new AuthError('expired'); }
-  if (!response.ok) throw new Error(`calendar_${response.status}`);
-  return response.json() as Promise<T>;
-}
+const api = <T>(token: AccessToken, path: string, params: Record<string, string> = {}) => googleGet<T>(SLOT, token, `${API}${path}`, params);
 
 type ApiCalendar = { id: string; summary?: string; summaryOverride?: string; selected?: boolean };
 type ApiEvent = {

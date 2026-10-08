@@ -1,15 +1,22 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   BookOpen, CalendarDays, Check, ChevronDown, ChevronRight, Clock3,
-  FileText, GraduationCap, Plus, RefreshCw, StickyNote, UserRound, X,
+  FileText, GraduationCap, Mail, Plus, RefreshCw, StickyNote, UserRound, X,
 } from 'lucide-react';
 import {
   AuthError, dayKey, disconnect, fetchEvents, loadGis, readStoredToken, requestToken,
   type AccessToken, type LiveEvent,
 } from '@/lib/google-calendar';
 import {
-  TIMETABLE_APP_URL, fetchTimetable, readCachedTimetable, splitLesson, type Timetable,
+  TIMETABLE_APP_URL, fetchTimetable, readCachedTimetable, splitLesson, type Lesson, type Timetable,
 } from '@/lib/timetable';
+import {
+  STORAGE_KEY as ATTENDANCE_KEY, clearSession, countMarked, loadRecords, toggleStatus,
+  type EntryInfo, type Records, type SessionInfo, type Status,
+} from '@/lib/attendance';
+import { disconnectMail, readStoredMailToken, requestMailToken } from '@/lib/gmail';
+import { AttendanceSheet } from '@/components/attendance-sheet';
+import { MailSheet } from '@/components/mail-sheet';
 
 type ScheduleFilter = '전체' | '캘린더' | '수업' | '학교' | '개인';
 type TaskCategory = '학교' | '개인';
@@ -24,7 +31,7 @@ function buildDays() {
   });
 }
 type CalendarEvent = { id?: string; time: string; title: string; note: string; tag?: string };
-type ClassItem = { time: string; subject: string; room: string };
+type ClassItem = { time: string; subject: string; room: string; period?: number; count?: number; marked?: number };
 const calendarEventsByDate: Record<string, CalendarEvent[]> = {
   '6': [
     { time: '08:40', title: '아침 조회 · 2학년 3반', note: '담임 선생님 공지' },
@@ -118,6 +125,11 @@ export default function App() {
   const gisReady = useRef(false);
   const [liveTimetable, setLiveTimetable] = useState<Timetable | null>(readCachedTimetable);
   const [timetableState, setTimetableState] = useState<'loading' | 'ok' | 'error'>('loading');
+  const [records, setRecords] = useState<Records>(loadRecords);
+  const [attendancePeriod, setAttendancePeriod] = useState<number | null>(null);
+  const [mailOpen, setMailOpen] = useState(false);
+  const [mailToken, setMailToken] = useState<AccessToken | null>(readStoredMailToken);
+  const [mailBusy, setMailBusy] = useState(false);
   const [activeFilter, setActiveFilter] = useState<ScheduleFilter>('전체');
   const [tasks, setTasks] = useState<PlannerTask[]>(loadTasks);
   const [note, setNote] = useState(loadNote);
@@ -134,14 +146,17 @@ export default function App() {
   const calendarEvents: CalendarEvent[] = connected
     ? liveEvents!.filter((event) => event.dayKey === selectedDay.key)
     : calendarEventsByDate[SAMPLE_KEYS[selectedDay.index]] ?? [];
+  const sessionOf = (lesson: Lesson): SessionInfo => ({ date: selectedDay.key, day: selectedDay.day, period: lesson.period, label: lesson.text, subject: lesson.subject });
   const timetable: ClassItem[] = liveTimetable
-    ? (liveTimetable.days[selectedDay.day] ?? []).map(({ period, text }) => {
-        const { name, block } = splitLesson(text);
-        return { time: `${period}교시`, subject: name, room: block };
+    ? (liveTimetable.days[selectedDay.day] ?? []).map((lesson) => {
+        const { name, block } = splitLesson(lesson.text);
+        const count = lesson.groups.reduce((sum, group) => sum + group.students.length, 0);
+        return { time: `${lesson.period}교시`, subject: name, room: block, period: lesson.period, count: count || undefined, marked: countMarked(records, sessionOf(lesson), lesson.groups) };
       })
     : timetableByDate[SAMPLE_KEYS[selectedDay.index]] ?? [];
+  const attendanceLesson = attendancePeriod === null ? undefined : liveTimetable?.days[selectedDay.day]?.find((lesson) => lesson.period === attendancePeriod);
   const timetableNote = timetableState === 'ok'
-    ? `구글 시트의 시간표예요 · ${new Date(liveTimetable!.loadedAt).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })} 기준`
+    ? `구글 시트의 시간표예요 · ${new Date(liveTimetable!.loadedAt).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })} 기준 · 수업을 누르면 명단과 출결을 볼 수 있어요`
     : timetableState === 'loading'
       ? (liveTimetable ? '저장된 시간표를 보여주며 최신 시간표를 불러오는 중이에요.' : '시간표를 불러오는 중이에요…')
       : liveTimetable ? '최신 시간표를 불러오지 못해 저장된 시간표를 보여줘요.' : '시간표를 불러오지 못해 샘플을 보여줘요.';
@@ -150,6 +165,11 @@ export default function App() {
     fetchTimetable()
       .then((fresh) => { setLiveTimetable(fresh); setTimetableState('ok'); })
       .catch(() => setTimetableState('error'));
+  }, []);
+  useEffect(() => {
+    const onStorage = (event: StorageEvent) => { if (event.key === ATTENDANCE_KEY) setRecords(loadRecords()); };
+    window.addEventListener('storage', onStorage);
+    return () => window.removeEventListener('storage', onStorage);
   }, []);
   useEffect(() => {
     loadGis().then(() => { gisReady.current = true; }).catch(() => { /* Offline: the sample schedule still works. */ });
@@ -225,6 +245,35 @@ export default function App() {
     try { localStorage.removeItem(STORAGE_LINKED); } catch { /* Optional hint only. */ }
     flash('구글 캘린더 연결을 해제했어요. 샘플 일정으로 돌아가요.');
   }
+  function changeAttendance(apply: () => Records) {
+    try { setRecords(apply()); } catch { flash('이 기기에 출결을 저장하지 못했어요. 브라우저 저장 공간을 확인해 주세요.'); }
+  }
+  function toggleAttendance(entry: EntryInfo, status: Status) {
+    if (attendanceLesson) changeAttendance(() => toggleStatus(sessionOf(attendanceLesson), entry, status));
+  }
+  function clearAttendance() {
+    if (attendanceLesson && window.confirm('이 수업의 출결 기록을 모두 지울까요?')) changeAttendance(() => clearSession(sessionOf(attendanceLesson)));
+  }
+  async function connectMail() {
+    if (mailBusy) return;
+    if (!gisReady.current) { flash('구글 로그인을 준비하고 있어요. 잠시 뒤 다시 눌러 주세요.'); void loadGis().then(() => { gisReady.current = true; }).catch(() => flash('인터넷 연결을 확인해 주세요.')); return; }
+    setMailBusy(true);
+    try {
+      setMailToken(await requestMailToken(''));
+      flash('Gmail을 연결했어요.');
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : '';
+      if (reason === 'popup_closed' || reason === 'access_denied') flash('연결을 취소했어요.');
+      else if (reason === 'popup_failed_to_open') flash('팝업이 막혀 있어요. 팝업을 허용하고 다시 눌러 주세요.');
+      else flash('Gmail 연결에 실패했어요. 잠시 뒤 다시 시도해 주세요.');
+    } finally { setMailBusy(false); }
+  }
+  function unlinkMail() {
+    disconnectMail(mailToken);
+    setMailToken(null);
+    flash('Gmail 연결을 해제했어요.');
+  }
+  function closeMail() { setMailOpen(false); setNav('오늘'); }
   function saveNote() {
     const saved = noteDraft.trim();
     if (!saved) { flash('메모 내용을 한 줄 적어주세요.'); return; }
@@ -242,7 +291,9 @@ export default function App() {
   }
   function chooseNav(label: string) {
     setNav(label);
-    if (label === '메모') {
+    if (label === '메일') {
+      setMailOpen(true);
+    } else if (label === '메모') {
       setNoteDraft(note);
       setNoteOpen(true);
     } else if (label === '할 일') {
@@ -328,7 +379,13 @@ export default function App() {
 
         {showTimetable && <section className="is-section is-timetable" aria-label="내 수업 시간표" data-testid="section-sample-timetable">
           <div className="is-timetable-head"><div className="is-timetable-label"><GraduationCap size={15} /> 내 수업 시간표</div><span className="is-class-tag">{liveTimetable ? (timetableState === 'ok' ? '시트 연동' : '저장본') : '샘플 시간표'}</span></div>
-          <div className="is-class-row">{!timetable.length && <div className="is-empty-filter" style={{ width: '100%' }} data-testid="status-no-classes">이 날은 수업이 없어요.</div>}{timetable.map((item) => <div className="is-class" key={item.time} data-testid={`class-${item.time}`}><span className="is-class-time">{item.time}</span><span className="is-class-name">{item.subject}</span><span className="is-class-room">{item.room}</span></div>)}</div>
+          <div className="is-class-row">{!timetable.length && <div className="is-empty-filter" style={{ width: '100%' }} data-testid="status-no-classes">이 날은 수업이 없어요.</div>}{timetable.map((item) => item.period === undefined
+            ? <div className="is-class" key={item.time} data-testid={`class-${item.time}`}><span className="is-class-time">{item.time}</span><span className="is-class-name">{item.subject}</span><span className="is-class-room">{item.room}</span></div>
+            : <button type="button" className="is-class is-class-button" key={item.time} onClick={() => setAttendancePeriod(item.period!)} aria-label={`${item.time} ${item.subject} 명단과 출결 열기`} data-testid={`class-${item.time}`}>
+                <span className="is-class-time">{item.time}</span><span className="is-class-name">{item.subject}</span>
+                <span className="is-class-room">{item.room}{item.room && item.count ? ' · ' : ''}{item.count ? `${item.count}명` : ''}</span>
+                {item.marked ? <span className="is-class-mark" data-testid={`marked-${item.time}`}>출결 {item.marked}</span> : null}
+              </button>)}</div>
           <p className="is-timetable-note" data-testid="text-timetable-note">{timetableNote}</p>
           <a className="is-timetable-connect" href={TIMETABLE_APP_URL} target="_blank" rel="noopener noreferrer" aria-label="시간표·출결부 앱을 새 창으로 열기" data-testid="link-timetable-app">
             <BookOpen size={13} /><span>시간표 · 출결부 앱</span><span className="is-connect-status">새 창</span>
@@ -368,6 +425,7 @@ export default function App() {
           { label: '오늘', icon: <CalendarDays size={17} strokeWidth={1.9} /> },
           { label: '일정', icon: <Clock3 size={17} strokeWidth={1.9} /> },
           { label: '할 일', icon: <Check size={17} strokeWidth={2} /> },
+          { label: '메일', icon: <Mail size={17} strokeWidth={1.8} /> },
           { label: '메모', icon: <FileText size={17} strokeWidth={1.8} /> },
         ].map((item) => <button type="button" key={item.label} className={`is-nav${nav === item.label ? ' active' : ''}`} onClick={() => chooseNav(item.label)} aria-label={`${item.label} 보기`} data-testid={`nav-${item.label}`}><span className="is-nav-icon">{item.icon}</span>{item.label}</button>)}
       </nav>
@@ -383,10 +441,28 @@ export default function App() {
               ? <button type="button" className="is-sync" onClick={unlinkGoogle} aria-label="구글 캘린더 연결 해제" data-testid="button-google-unlink"><span>연결 해제</span></button>
               : <button type="button" className="is-sync" onClick={() => void connectGoogle()} disabled={calendarBusy} aria-label="구글 캘린더 연결" data-testid="button-google-connect"><RefreshCw size={12} className={calendarBusy ? 'is-spin' : undefined} /><span>{calendarBusy ? '연결 중…' : '구글 연결'}</span></button>}
           </div>
-          <p className="is-modal-hint">일정은 읽기만 하고 수정하지 않아요. 불러온 일정은 이 기기에서만 보이고 따로 저장하지 않아요.</p>
-          <p className="is-modal-hint">메모와 할 일은 이 기기의 브라우저에 저장돼요.</p>
+          <div className="is-source-card" style={{ marginTop: 10 }} data-testid="status-gmail">
+            <span className="is-google-mark"><Mail size={17} strokeWidth={1.8} /></span>
+            <div className="is-source-copy"><span className="is-source-title">Gmail</span><span className="is-source-caption">{mailToken ? '연결됨 · 읽기 전용' : '연결되지 않음'}</span></div>
+            {mailToken
+              ? <button type="button" className="is-sync" onClick={unlinkMail} aria-label="Gmail 연결 해제" data-testid="button-mail-unlink"><span>연결 해제</span></button>
+              : <button type="button" className="is-sync" onClick={() => void connectMail()} disabled={mailBusy} aria-label="Gmail 연결" data-testid="button-mail-connect-profile"><span>{mailBusy ? '연결 중…' : 'Gmail 연결'}</span></button>}
+          </div>
+          <p className="is-modal-hint">일정과 메일은 읽기만 하고 수정하지 않아요. 불러온 내용은 이 기기에서만 보이고 따로 저장하지 않아요.</p>
+          <p className="is-modal-hint">메모, 할 일, 출결 기록은 이 기기의 브라우저에 저장돼요. 출결은 시간표·출결부 앱과 같은 기록을 써요.</p>
         </section>
       </div>}
+      {attendanceLesson && <AttendanceSheet
+        session={sessionOf(attendanceLesson)}
+        dateLabel={`${selectedDay.month}월 ${selectedDay.date}일 (${selectedDay.day})`}
+        groups={attendanceLesson.groups}
+        rosterLoaded={Boolean(liveTimetable?.withRoster)}
+        records={records}
+        onToggle={toggleAttendance}
+        onClear={clearAttendance}
+        onClose={() => setAttendancePeriod(null)}
+      />}
+      {mailOpen && <MailSheet token={mailToken} connecting={mailBusy} onConnect={() => void connectMail()} onExpired={() => { setMailToken(null); flash('Gmail 로그인이 만료됐어요. 다시 연결해 주세요.'); }} onClose={closeMail} />}
       {noteOpen && <div className="is-modal-backdrop" onClick={(event) => { if (event.target === event.currentTarget) setNoteOpen(false); }}>
         <form className="is-modal" aria-label="메모 편집" onSubmit={(event) => { event.preventDefault(); saveNote(); }}>
           <div className="is-modal-head"><h2 className="is-modal-title">나만 보는 메모</h2><button type="button" className="is-close" aria-label="닫기" onClick={() => setNoteOpen(false)} data-testid="button-close-note"><X size={17} /></button></div>
