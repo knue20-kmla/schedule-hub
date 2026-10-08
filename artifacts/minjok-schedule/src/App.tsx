@@ -7,6 +7,9 @@ import {
   AuthError, dayKey, disconnect, fetchEvents, loadGis, readStoredToken, requestToken,
   type AccessToken, type LiveEvent,
 } from '@/lib/google-calendar';
+import {
+  TIMETABLE_APP_URL, fetchTimetable, readCachedTimetable, splitLesson, type Timetable,
+} from '@/lib/timetable';
 
 type ScheduleFilter = '전체' | '캘린더' | '수업' | '학교' | '개인';
 type TaskCategory = '학교' | '개인';
@@ -113,6 +116,8 @@ export default function App() {
   const [calendarBusy, setCalendarBusy] = useState(false);
   const [linked, setLinked] = useState(() => { try { return localStorage.getItem(STORAGE_LINKED) === '1'; } catch { return false; } });
   const gisReady = useRef(false);
+  const [liveTimetable, setLiveTimetable] = useState<Timetable | null>(readCachedTimetable);
+  const [timetableState, setTimetableState] = useState<'loading' | 'ok' | 'error'>('loading');
   const [activeFilter, setActiveFilter] = useState<ScheduleFilter>('전체');
   const [tasks, setTasks] = useState<PlannerTask[]>(loadTasks);
   const [note, setNote] = useState(loadNote);
@@ -129,8 +134,23 @@ export default function App() {
   const calendarEvents: CalendarEvent[] = connected
     ? liveEvents!.filter((event) => event.dayKey === selectedDay.key)
     : calendarEventsByDate[SAMPLE_KEYS[selectedDay.index]] ?? [];
-  const timetable = timetableByDate[SAMPLE_KEYS[selectedDay.index]] ?? [];
+  const timetable: ClassItem[] = liveTimetable
+    ? (liveTimetable.days[selectedDay.day] ?? []).map(({ period, text }) => {
+        const { name, block } = splitLesson(text);
+        return { time: `${period}교시`, subject: name, room: block };
+      })
+    : timetableByDate[SAMPLE_KEYS[selectedDay.index]] ?? [];
+  const timetableNote = timetableState === 'ok'
+    ? `구글 시트의 시간표예요 · ${new Date(liveTimetable!.loadedAt).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })} 기준`
+    : timetableState === 'loading'
+      ? (liveTimetable ? '저장된 시간표를 보여주며 최신 시간표를 불러오는 중이에요.' : '시간표를 불러오는 중이에요…')
+      : liveTimetable ? '최신 시간표를 불러오지 못해 저장된 시간표를 보여줘요.' : '시간표를 불러오지 못해 샘플을 보여줘요.';
 
+  useEffect(() => {
+    fetchTimetable()
+      .then((fresh) => { setLiveTimetable(fresh); setTimetableState('ok'); })
+      .catch(() => setTimetableState('error'));
+  }, []);
   useEffect(() => {
     loadGis().then(() => { gisReady.current = true; }).catch(() => { /* Offline: the sample schedule still works. */ });
   }, []);
@@ -307,12 +327,12 @@ export default function App() {
         </section>
 
         {showTimetable && <section className="is-section is-timetable" aria-label="내 수업 시간표" data-testid="section-sample-timetable">
-          <div className="is-timetable-head"><div className="is-timetable-label"><GraduationCap size={15} /> 내 수업 시간표</div><span className="is-class-tag">샘플 시간표</span></div>
-          <div className="is-class-row">{!timetable.length && <div className="is-empty-filter" style={{ width: '100%' }} data-testid="status-no-classes">이 날은 수업이 없어요.</div>}{timetable.map((item) => <div className="is-class" key={item.time} data-testid={`class-sample-${item.time}`}><span className="is-class-time">{item.time}</span><span className="is-class-name">{item.subject}</span><span className="is-class-room">{item.room}</span></div>)}</div>
-          <p className="is-timetable-note">실제 수업은 기존 시간표 웹앱 연결 후 불러올 예정이에요.</p>
-          <button type="button" className="is-timetable-connect" onClick={() => flash('기존 수업 시간표 웹앱은 다음 단계에서 연결할게요.')} aria-label="기존 수업 시간표 웹앱 연결은 추후 진행" data-testid="button-timetable-pending">
-            <BookOpen size={13} /><span>기존 수업 시간표 웹앱</span><span className="is-connect-status">추후 연결</span>
-          </button>
+          <div className="is-timetable-head"><div className="is-timetable-label"><GraduationCap size={15} /> 내 수업 시간표</div><span className="is-class-tag">{liveTimetable ? (timetableState === 'ok' ? '시트 연동' : '저장본') : '샘플 시간표'}</span></div>
+          <div className="is-class-row">{!timetable.length && <div className="is-empty-filter" style={{ width: '100%' }} data-testid="status-no-classes">이 날은 수업이 없어요.</div>}{timetable.map((item) => <div className="is-class" key={item.time} data-testid={`class-${item.time}`}><span className="is-class-time">{item.time}</span><span className="is-class-name">{item.subject}</span><span className="is-class-room">{item.room}</span></div>)}</div>
+          <p className="is-timetable-note" data-testid="text-timetable-note">{timetableNote}</p>
+          <a className="is-timetable-connect" href={TIMETABLE_APP_URL} target="_blank" rel="noopener noreferrer" aria-label="시간표·출결부 앱을 새 창으로 열기" data-testid="link-timetable-app">
+            <BookOpen size={13} /><span>시간표 · 출결부 앱</span><span className="is-connect-status">새 창</span>
+          </a>
         </section>}
 
         </div>
