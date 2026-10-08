@@ -147,7 +147,7 @@ export function IntegratedSchedule() {
         }
         .is-shell { width:100%; max-width:430px; min-height:100dvh; margin:0 auto; padding:16px 20px calc(112px + env(safe-area-inset-bottom)); animation:is-enter .5s ease both; }
         @keyframes is-enter { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:translateY(0); } }
-        .is-topbar { display:flex; justify-content:space-between; align-items:center; margin-bottom:18px; }
+        .is-topbar { display:flex; justify-content:space-between; align-items:center; margin-bottom:15px; }
         .is-brand { display:flex; align-items:center; gap:10px; color:var(--deep); font-size:14px; font-weight:800; letter-spacing:-.055em; }
         .is-brand-copy { display:flex; flex-direction:column; gap:2px; }
         .is-brand-title { color:var(--deep); font-size:13px; line-height:1.2; }
@@ -155,11 +155,15 @@ export function IntegratedSchedule() {
         .is-brand-mark { display:block; width:43px; height:43px; flex:0 0 43px; object-fit:contain; border-radius:50%; background:#fffefa; box-shadow:0 2px 9px rgba(35,48,103,.12); }
         .is-profile { display:grid; place-items:center; width:40px; height:40px; padding:0; border:1px solid #dbe1eb; border-radius:50%; background:rgba(255,254,250,.8); color:var(--navy); cursor:pointer; }
         .is-profile:active { transform:scale(.94); }
-        .is-eyebrow { margin:0 0 5px; color:#63718e; font-size:11px; font-weight:700; letter-spacing:.07em; }
-        .is-heading { margin:0; color:var(--deep); font-size:26px; line-height:1.3; letter-spacing:-.075em; font-weight:800; }
-        .is-hello { display:flex; align-items:flex-end; justify-content:space-between; }
-        .is-weather { display:flex; align-items:center; gap:5px; padding:7px 10px; margin-bottom:2px; border:1px solid #e5d7b7; border-radius:12px; background:#f5eedf; color:#665638; font-size:10px; font-weight:700; white-space:nowrap; }
-        .is-date-strip { display:flex; justify-content:space-between; gap:6px; margin:17px 0 14px; padding:5px; border:1px solid rgba(213,221,234,.9); border-radius:18px; background:rgba(255,254,250,.62); }
+        .is-campus-hero { position:relative; height:150px; overflow:hidden; border:1px solid rgba(35,48,103,.08); border-radius:21px; background:#e7ebf2; box-shadow:0 8px 21px rgba(35,48,103,.07); isolation:isolate; }
+        .is-campus-photo { position:absolute; inset:0; width:100%; height:100%; object-fit:cover; object-position:center 55%; filter:brightness(1.18) saturate(.72) contrast(.92); }
+        .is-campus-veil { position:absolute; inset:0; background:linear-gradient(180deg,rgba(239,243,250,.14) 0%,rgba(239,243,250,.1) 36%,rgba(239,241,247,.7) 100%),linear-gradient(90deg,rgba(239,243,250,.1),rgba(239,243,250,.01) 74%); }
+        .is-campus-topline { position:absolute; top:12px; right:12px; left:13px; display:flex; align-items:center; justify-content:flex-end; gap:8px; }
+        .is-campus-weather { display:flex; align-items:center; gap:5px; min-height:25px; padding:0 9px; border:1px solid rgba(255,255,255,.72); border-radius:999px; background:rgba(248,249,251,.78); color:#425174; font-size:8px; font-weight:700; backdrop-filter:blur(10px); }
+        .is-campus-copy { position:absolute; right:14px; bottom:13px; left:15px; }
+        .is-campus-date { margin:0 0 4px; color:#586888; font-size:9px; font-weight:750; letter-spacing:.04em; }
+        .is-heading { margin:0; color:var(--deep); font-size:26px; line-height:1.15; letter-spacing:-.07em; font-weight:800; }
+        .is-date-strip { display:flex; justify-content:space-between; gap:6px; margin:13px 0 12px; padding:5px; border:1px solid rgba(213,221,234,.9); border-radius:18px; background:rgba(255,254,250,.62); }
         .is-day { display:flex; flex:1; min-width:0; height:55px; flex-direction:column; align-items:center; justify-content:center; gap:3px; border:1px solid transparent; border-radius:13px; background:transparent; color:#71809a; font:inherit; cursor:pointer; transition:background .18s ease,transform .18s ease; }
         .is-day:active { transform:scale(.94); }
         .is-day-name { font-size:10px; font-weight:600; }
@@ -275,13 +279,21 @@ export function IntegratedSchedule() {
               <UserRound size={17} strokeWidth={1.7} />
             </button>
           </div>
-          <div className="is-hello">
-            <div>
-              <p className="is-eyebrow">10월 {selectedDay.date}일 {selectedDay.day}요일</p>
+          <section className="is-campus-hero" aria-label="민족사관고등학교 캠퍼스와 오늘의 일정">
+            <img
+              className="is-campus-photo"
+              src="/__mockup/images/integrated-schedule-promo.jpg"
+              alt="나무 사이로 학교 건물과 동상이 보이는 민족사관고등학교 캠퍼스"
+            />
+            <div className="is-campus-veil" aria-hidden="true" />
+            <div className="is-campus-topline">
+              <span className="is-campus-weather"><span>18°</span><span aria-hidden="true">·</span><span>구름 조금</span></span>
+            </div>
+            <div className="is-campus-copy">
+              <p className="is-campus-date">10월 {selectedDay.date}일 {selectedDay.day}요일</p>
               <h1 className="is-heading">오늘의 일정</h1>
             </div>
-            <div className="is-weather"><span>18°</span><span aria-hidden="true">·</span><span>구름 조금</span></div>
-          </div>
+          </section>
         </header>
 
         <div className="is-date-strip" role="group" aria-label="날짜 선택">
