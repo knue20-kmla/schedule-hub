@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  BookOpen, CalendarDays, Check, ChevronDown, ChevronRight, Clock3,
-  FileText, GraduationCap, Mail, Plus, RefreshCw, StickyNote, UserRound, X,
+  BookOpen, CalendarDays, Check, ChevronDown, ChevronRight, Clock3, Download,
+  FileText, GraduationCap, Mail, Plus, RefreshCw, StickyNote, Trash2, UserRound, X,
 } from 'lucide-react';
 import {
   AuthError, dayKey, disconnect, fetchEvents, loadGis, readStoredToken, requestToken,
@@ -20,7 +20,7 @@ import { MailSheet } from '@/components/mail-sheet';
 
 type ScheduleFilter = '전체' | '캘린더' | '수업' | '학교' | '개인';
 type TaskCategory = '학교' | '개인';
-type PlannerTask = { id: number; title: string; detail: string; category: TaskCategory; done: boolean };
+type PlannerTask = { id: number; title: string; detail: string; category: TaskCategory; done: boolean; start?: string; end?: string };
 
 const SAMPLE_KEYS = ['6', '7', '8', '9', '10'];
 function buildDays() {
@@ -84,6 +84,9 @@ const timetableByDate: Record<string, ClassItem[]> = {
     { time: '09:00', subject: '자율 학습', room: '도서관' },
   ],
 };
+type InstallPrompt = Event & { prompt: () => Promise<void>; userChoice: Promise<{ outcome: 'accepted' | 'dismissed' }> };
+const isStandalone = () => window.matchMedia('(display-mode: standalone)').matches || (navigator as unknown as { standalone?: boolean }).standalone === true;
+const isIos = () => /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
 const assetUrl = (path: string) => `${import.meta.env.BASE_URL}${path}`;
 const initialTasks: PlannerTask[] = [
   { id: 1, title: '한국사 발표 자료 마무리', detail: '금요일 1교시 · 3장 분량', category: '학교', done: false },
@@ -103,6 +106,20 @@ function loadTasks(): PlannerTask[] {
     }
   } catch { /* Use the illustrative defaults when browser storage is unavailable. */ }
   return initialTasks;
+}
+const monthDay = (key: string) => { const [, month, day] = key.split('-'); return `${Number(month)}월 ${Number(day)}일`; };
+const taskEnd = (task: PlannerTask) => task.end ?? task.start ?? '';
+// A task belongs to a day if the day is inside its period; unfinished tasks past their end date also show on today.
+function taskState(task: PlannerTask, key: string, todayKey: string): 'on' | 'overdue' | 'off' {
+  if (!task.start) return 'on';
+  if (key >= task.start && key <= taskEnd(task)) return 'on';
+  if (!task.done && key === todayKey && taskEnd(task) < todayKey) return 'overdue';
+  return 'off';
+}
+function taskDetail(task: PlannerTask, state: 'on' | 'overdue' | 'off') {
+  if (!task.start) return task.detail || '날짜 없음 · 매일 보여요';
+  const range = taskEnd(task) !== task.start ? `${monthDay(task.start)} ~ ${monthDay(taskEnd(task))}` : monthDay(task.start);
+  return state === 'overdue' ? `${range} · 기한이 지났어요` : range;
 }
 function loadNote() {
   try { return localStorage.getItem(STORAGE_NOTE) ?? '오늘 과학 수행평가 초안 제출하기. 끝나면 서점에 들러서 새 노트 구경하기.'; }
@@ -135,10 +152,16 @@ export default function App() {
   const [note, setNote] = useState(loadNote);
   const [noteDraft, setNoteDraft] = useState(note);
   const [profileOpen, setProfileOpen] = useState(false);
+  const [installEvent, setInstallEvent] = useState<InstallPrompt | null>(null);
+  const [standalone, setStandalone] = useState(isStandalone);
   const [noteOpen, setNoteOpen] = useState(false);
   const [taskOpen, setTaskOpen] = useState(false);
   const [taskDraft, setTaskDraft] = useState('');
   const [taskCategory, setTaskCategory] = useState<TaskCategory>('학교');
+  const [taskDated, setTaskDated] = useState(true);
+  const [taskStart, setTaskStart] = useState('');
+  const [taskEndDraft, setTaskEndDraft] = useState('');
+  const [undoTask, setUndoTask] = useState<{ task: PlannerTask; index: number } | null>(null);
   const [notice, setNotice] = useState('');
   const [nav, setNav] = useState('오늘');
   const selectedDay = days.find((day) => day.key === selectedDate) ?? days[2];
@@ -167,6 +190,13 @@ export default function App() {
       .catch(() => setTimetableState('error'));
   }, []);
   useEffect(() => {
+    const onPrompt = (event: Event) => { event.preventDefault(); setInstallEvent(event as InstallPrompt); };
+    const onInstalled = () => { setInstallEvent(null); setStandalone(true); };
+    window.addEventListener('beforeinstallprompt', onPrompt);
+    window.addEventListener('appinstalled', onInstalled);
+    return () => { window.removeEventListener('beforeinstallprompt', onPrompt); window.removeEventListener('appinstalled', onInstalled); };
+  }, []);
+  useEffect(() => {
     const onStorage = (event: StorageEvent) => { if (event.key === ATTENDANCE_KEY) setRecords(loadRecords()); };
     window.addEventListener('storage', onStorage);
     return () => window.removeEventListener('storage', onStorage);
@@ -179,6 +209,11 @@ export default function App() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   useEffect(() => {
+    if (!undoTask) return undefined;
+    const timer = window.setTimeout(() => setUndoTask(null), 8000);
+    return () => window.clearTimeout(timer);
+  }, [undoTask]);
+  useEffect(() => {
     try { localStorage.setItem(STORAGE_TASKS, JSON.stringify(tasks)); } catch { /* Local-only app can still be used for this session. */ }
   }, [tasks]);
   useEffect(() => {
@@ -187,12 +222,15 @@ export default function App() {
 
   const visibleCalendarEvents = activeFilter === '개인' || activeFilter === '수업' ? [] : calendarEvents;
   const showTimetable = activeFilter === '전체' || activeFilter === '수업';
-  const visibleTasks = tasks.filter((task) => {
-    if (activeFilter === '캘린더' || activeFilter === '수업') return false;
-    if (activeFilter === '학교') return task.category === '학교';
-    if (activeFilter === '개인') return task.category === '개인';
-    return true;
-  });
+  const todayKey = days[2].key;
+  const isToday = selectedDay.key === todayKey;
+  const inCategory = (task: PlannerTask) => activeFilter === '학교' ? task.category === '학교' : activeFilter === '개인' ? task.category === '개인' : true;
+  const visibleTasks = activeFilter === '캘린더' || activeFilter === '수업'
+    ? []
+    : tasks.filter((task) => inCategory(task) && taskState(task, selectedDay.key, todayKey) !== 'off');
+  const otherDayCount = activeFilter === '캘린더' || activeFilter === '수업'
+    ? 0
+    : tasks.filter((task) => inCategory(task) && !task.done && taskState(task, selectedDay.key, todayKey) === 'off' && taskEnd(task) >= todayKey).length;
 
   function flash(message: string) {
     setNotice(message);
@@ -201,6 +239,31 @@ export default function App() {
   function toggleTask(id: number) {
     setTasks((current) => current.map((task) => task.id === id ? { ...task, done: !task.done } : task));
     flash('작은 한 걸음, 잘 해냈어요.');
+  }
+  async function installApp() {
+    if (!installEvent) return;
+    await installEvent.prompt();
+    const choice = await installEvent.userChoice;
+    setInstallEvent(null);
+    flash(choice.outcome === 'accepted' ? '앱으로 설치하고 있어요. 홈 화면을 확인해 보세요.' : '설치를 취소했어요. 개인정보에서 언제든 다시 설치할 수 있어요.');
+  }
+  function deleteTask(id: number) {
+    const index = tasks.findIndex((task) => task.id === id);
+    if (index < 0) return;
+    setUndoTask({ task: tasks[index], index });
+    setTasks((current) => current.filter((task) => task.id !== id));
+  }
+  function restoreTask() {
+    if (!undoTask) return;
+    const { task, index } = undoTask;
+    setTasks((current) => { const next = [...current]; next.splice(Math.min(index, next.length), 0, task); return next; });
+    setUndoTask(null);
+  }
+  function openTaskForm() {
+    setTaskDated(true);
+    setTaskStart(selectedDay.key);
+    setTaskEndDraft('');
+    setTaskOpen(true);
   }
   async function loadCalendar(active: AccessToken) {
     setCalendarBusy(true);
@@ -284,10 +347,12 @@ export default function App() {
   function addTask() {
     const title = taskDraft.trim();
     if (!title) return;
-    setTasks((current) => [{ id: Date.now(), title, detail: '오늘 할 일', category: taskCategory, done: false }, ...current]);
+    const start = taskDated ? taskStart || selectedDay.key : undefined;
+    const end = start && taskEndDraft > start ? taskEndDraft : undefined;
+    setTasks((current) => [{ id: Date.now(), title, detail: '', category: taskCategory, done: false, ...(start ? { start } : {}), ...(end ? { end } : {}) }, ...current]);
     setTaskDraft('');
     setTaskOpen(false);
-    flash(`${taskCategory} 할 일로 담았어요.`);
+    flash(start ? `${monthDay(start)}${end ? ` ~ ${monthDay(end)}` : ''} ${taskCategory} 할 일로 담았어요.` : `${taskCategory} 할 일로 담았어요. 날짜가 없어서 매일 보여요.`);
   }
   function chooseNav(label: string) {
     setNav(label);
@@ -402,15 +467,19 @@ export default function App() {
         </section>}
 
         {activeFilter !== '캘린더' && activeFilter !== '수업' && <section className="is-section" id="integrated-tasks" aria-label="학교 및 개인 할 일">
-          <div className="is-section-head"><div><h2 className="is-section-title">오늘 챙길 일</h2><p className="is-section-sub">학교도, 나의 일도 한눈에</p></div><span style={{ color: '#6f7868', fontSize: 12, fontWeight: 700 }} data-testid="text-open-task-count">{visibleTasks.filter((task) => !task.done).length}개 남음</span></div>
+          <div className="is-section-head"><div><h2 className="is-section-title">{isToday ? '오늘 챙길 일' : `${selectedDay.month}월 ${selectedDay.date}일 챙길 일`}</h2><p className="is-section-sub" data-testid="text-task-sub">{otherDayCount ? `다른 날 예정된 일 ${otherDayCount}개` : '학교도, 나의 일도 한눈에'}</p></div><span style={{ color: '#6f7868', fontSize: 12, fontWeight: 700 }} data-testid="text-open-task-count">{visibleTasks.filter((task) => !task.done).length}개 남음</span></div>
           <div className="is-task-list">
-            {visibleTasks.length ? visibleTasks.map((task) => <article className={`is-task${task.done ? ' done' : ''}`} key={task.id} data-testid={`task-item-${task.id}`}>
+            {visibleTasks.length ? visibleTasks.map((task) => {
+              const state = taskState(task, selectedDay.key, todayKey);
+              return <article className={`is-task${task.done ? ' done' : ''}${state === 'overdue' ? ' overdue' : ''}`} key={task.id} data-testid={`task-item-${task.id}`}>
               <button type="button" className={`is-check${task.done ? ' checked' : ''}`} aria-label={`${task.title} ${task.done ? '완료 취소' : '완료'}`} aria-pressed={task.done} onClick={() => toggleTask(task.id)} data-testid={`button-toggle-task-${task.id}`}>{task.done && <Check size={14} strokeWidth={2.8} />}</button>
-              <div className="is-task-content"><span className="is-task-title">{task.title}</span><span className="is-task-detail">{task.detail}</span></div>
+              <div className="is-task-content"><span className="is-task-title">{task.title}</span><span className="is-task-detail">{taskDetail(task, state)}</span></div>
               <span className={`is-task-category ${task.category === '학교' ? 'school' : 'personal'}`}>{task.category}</span>
-            </article>) : <div className="is-empty-filter" data-testid="status-no-tasks">아직 챙길 일이 없어요. 새 할 일을 담아보세요.</div>}
+              <button type="button" className="is-task-delete" aria-label={`${task.title} 삭제`} onClick={() => deleteTask(task.id)} data-testid={`button-delete-task-${task.id}`}><Trash2 size={16} /></button>
+            </article>;
+            }) : <div className="is-empty-filter" data-testid="status-no-tasks">이 날은 챙길 일이 없어요. 새 할 일을 담아보세요.</div>}
           </div>
-          <button type="button" className="is-add" onClick={() => setTaskOpen(true)} data-testid="button-add-task"><Plus size={14} /> 할 일 추가하기</button>
+          <button type="button" className="is-add" onClick={openTaskForm} data-testid="button-add-task"><Plus size={14} /> 할 일 추가하기</button>
         </section>}
         </div>
         </div>
@@ -429,11 +498,20 @@ export default function App() {
           { label: '메모', icon: <FileText size={17} strokeWidth={1.8} /> },
         ].map((item) => <button type="button" key={item.label} className={`is-nav${nav === item.label ? ' active' : ''}`} onClick={() => chooseNav(item.label)} aria-label={`${item.label} 보기`} data-testid={`nav-${item.label}`}><span className="is-nav-icon">{item.icon}</span>{item.label}</button>)}
       </nav>
+      {undoTask && <div className="is-toast is-toast-action" role="status" data-testid="status-task-deleted"><span>할 일을 삭제했어요</span><button type="button" onClick={restoreTask} data-testid="button-undo-delete">되돌리기</button></div>}
       {notice && <div className="is-toast" role="status" aria-live="polite" data-testid="status-toast">{notice}</div>}
 
       {profileOpen && <div className="is-modal-backdrop" onClick={(event) => { if (event.target === event.currentTarget) setProfileOpen(false); }}>
         <section className="is-modal" role="dialog" aria-label="개인정보">
           <div className="is-modal-head"><h2 className="is-modal-title">개인정보</h2><button type="button" className="is-close" aria-label="닫기" onClick={() => setProfileOpen(false)} data-testid="button-close-profile"><X size={17} /></button></div>
+          <div className="is-source-card" style={{ marginBottom: 10 }} data-testid="status-install">
+            <span className="is-google-mark"><Download size={17} strokeWidth={1.8} /></span>
+            <div className="is-source-copy">
+              <span className="is-source-title">앱으로 설치</span>
+              <span className="is-source-caption">{standalone ? '설치됨 · 앱으로 열려 있어요' : installEvent ? '홈 화면에 추가해 앱처럼 쓸 수 있어요' : isIos() ? 'Safari 공유 버튼 → "홈 화면에 추가"를 눌러 주세요' : '브라우저 메뉴의 "앱 설치" 또는 "홈 화면에 추가"를 눌러 주세요'}</span>
+            </div>
+            {!standalone && installEvent && <button type="button" className="is-sync" onClick={() => void installApp()} aria-label="앱으로 설치" data-testid="button-install-app"><span>설치</span></button>}
+          </div>
           <div className="is-source-card" data-testid="status-google-calendar">
             <span className="is-google-mark"><CalendarDays size={17} strokeWidth={1.8} /></span>
             <div className="is-source-copy"><span className="is-source-title">Google Calendar</span><span className="is-source-caption">{connected ? '연결됨 · 읽기 전용' : token ? '불러오는 중…' : linked ? '다시 연결이 필요해요' : '연결되지 않음 · 샘플 일정'}</span></div>
@@ -478,7 +556,15 @@ export default function App() {
           <div className="is-category-toggle" role="group" aria-label="할 일 분류">
             {(['학교', '개인'] as TaskCategory[]).map((category) => <button type="button" key={category} className={`is-category-choice${taskCategory === category ? ' active' : ''}`} aria-pressed={taskCategory === category} onClick={() => setTaskCategory(category)} data-testid={`button-task-category-${category}`}>{category === '학교' ? '학교 업무' : '개인 업무'}</button>)}
           </div>
-          <button type="submit" className="is-modal-submit" disabled={!taskDraft.trim()} data-testid="button-submit-task"><Plus size={15} /> 오늘에 담기</button>
+          <div className="is-category-toggle" role="group" aria-label="날짜 설정">
+            <button type="button" className={`is-category-choice${taskDated ? ' active' : ''}`} aria-pressed={taskDated} onClick={() => setTaskDated(true)} data-testid="button-task-dated">날짜 지정</button>
+            <button type="button" className={`is-category-choice${!taskDated ? ' active' : ''}`} aria-pressed={!taskDated} onClick={() => setTaskDated(false)} data-testid="button-task-undated">날짜 없음 (매일)</button>
+          </div>
+          {taskDated && <div className="is-date-fields">
+            <label className="is-date-field"><span>시작</span><input type="date" className="is-input" value={taskStart} onChange={(event) => { setTaskStart(event.target.value); if (taskEndDraft && taskEndDraft <= event.target.value) setTaskEndDraft(''); }} data-testid="input-task-start" required /></label>
+            <label className="is-date-field"><span>끝 (기간이면)</span><input type="date" className="is-input" value={taskEndDraft} min={taskStart || undefined} onChange={(event) => setTaskEndDraft(event.target.value)} data-testid="input-task-end" /></label>
+          </div>}
+          <button type="submit" className="is-modal-submit" disabled={!taskDraft.trim() || (taskDated && !taskStart)} data-testid="button-submit-task"><Plus size={15} /> 할 일 담기</button>
         </form>
       </div>}
     </main>

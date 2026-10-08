@@ -155,3 +155,14 @@ button.is-class:active { transform:scale(.97); }
 .is-mail-trash-wide { display:flex; align-items:center; justify-content:center; gap:6px; width:100%; min-height:46px; margin-top:14px; border:1px solid #e3c4c4; border-radius:12px; background:#fbf1f1; color:#8e2c2c; font-size:13px; font-weight:700; cursor:pointer; }
 .is-mail-undo { position:sticky; top:0; z-index:2; display:flex; align-items:center; justify-content:space-between; gap:10px; margin:0 0 8px; padding:6px 6px 6px 14px; border-radius:12px; background:var(--deep); color:#fffdf7; font-size:13px; }
 .is-mail-undo button { min-height:44px; padding:0 12px; border:0; background:transparent; color:#f0dba7; font-size:13px; font-weight:800; cursor:pointer; }
+
+/* task periods, delete and undo */
+.is-task { gap:6px; }
+.is-task.overdue { border-color:#e6c9a8; background:#fbf3e8; }
+.is-task-delete { flex:0 0 44px; display:grid; place-items:center; width:44px; height:44px; margin-right:-8px; border:0; border-radius:50%; background:transparent; color:#9a8c8c; cursor:pointer; }
+.is-task-delete:active { background:#f6e3e3; color:#8e2c2c; }
+.is-date-fields { display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:10px; }
+.is-date-field { display:flex; flex-direction:column; gap:4px; min-width:0; color:#69758c; font-size:12px; font-weight:650; }
+.is-date-field .is-input { min-width:0; padding:0 8px; font-size:16px; }
+.is-toast-action { display:flex; align-items:center; gap:6px; bottom:calc(150px + env(safe-area-inset-bottom)); padding:4px 4px 4px 15px; }
+.is-toast-action button { min-height:44px; padding:0 12px; border:0; background:transparent; color:#f0dba7; font-size:13px; font-weight:800; cursor:pointer; }
