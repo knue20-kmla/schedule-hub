@@ -1,0 +1,1 @@
+- [Integrated schedule app scope](product-scope.md) — KMLA-branded hub combining school calendar, timetable, school/personal work, and notes.
