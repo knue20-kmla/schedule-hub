@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { ArrowLeft, Mail, Paperclip, RefreshCw, X } from 'lucide-react';
-import { AuthError, type AccessToken } from '@/lib/google-auth';
+import { AuthError, GoogleApiError, type AccessToken } from '@/lib/google-auth';
 import { getMail, listInbox, type MailDetail, type MailItem } from '@/lib/gmail';
 
 type Props = {
@@ -30,8 +30,17 @@ export function MailSheet({ token, connecting, onConnect, onExpired, onClose }: 
 
   const fail = useCallback((err: unknown) => {
     if (err instanceof AuthError) { onExpired(); return; }
-    const reason = err instanceof Error ? err.message : '';
-    setError(reason === 'google_403' ? 'Gmail 사용 권한이 없어요. Google Cloud에서 Gmail API를 켜고 gmail.readonly 범위를 추가했는지 확인해 주세요.' : '메일을 불러오지 못했어요. 잠시 뒤 다시 시도해 주세요.');
+    if (err instanceof GoogleApiError && err.status === 403) {
+      if (/accessNotConfigured|has not been used|is disabled|SERVICE_DISABLED/i.test(err.detail)) {
+        setError('Google Cloud에서 Gmail API가 꺼져 있어요. API 및 서비스 → 라이브러리에서 Gmail API를 "사용"으로 켠 뒤, 1~2분 기다렸다가 새로고침해 주세요.');
+      } else if (/insufficient|scope/i.test(err.detail)) {
+        setError('Gmail 읽기 권한이 허용되지 않았어요. 개인정보에서 Gmail 연결을 해제하고 다시 연결할 때, 권한 화면의 Gmail 항목을 체크해 주세요.');
+      } else {
+        setError(`Gmail이 요청을 거절했어요. (${err.detail || '403'})`);
+      }
+      return;
+    }
+    setError(err instanceof GoogleApiError ? `메일을 불러오지 못했어요. (${err.status})` : '메일을 불러오지 못했어요. 인터넷 연결을 확인하고 다시 시도해 주세요.');
   }, [onExpired]);
 
   const load = useCallback(async () => {

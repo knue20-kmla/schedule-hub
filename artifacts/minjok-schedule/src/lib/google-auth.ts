@@ -28,6 +28,9 @@ declare global {
 
 export type AccessToken = { value: string; expires: number };
 export class AuthError extends Error {}
+export class GoogleApiError extends Error {
+  constructor(readonly status: number, readonly detail: string) { super(`google_${status}`); }
+}
 
 const isReady = () => Boolean(window.google?.accounts?.oauth2);
 
@@ -92,6 +95,13 @@ export async function googleGet<T>(slot: string, token: AccessToken, url: string
   Object.entries(params).forEach(([key, value]) => (Array.isArray(value) ? value : [value]).forEach((v) => query.append(key, v)));
   const response = await fetch(`${url}?${query}`, { headers: { Authorization: `Bearer ${token.value}` } });
   if (response.status === 401) { storeToken(slot, null); throw new AuthError('expired'); }
-  if (!response.ok) throw new Error(`google_${response.status}`);
+  if (!response.ok) {
+    let detail = '';
+    try {
+      const body = (await response.json()) as { error?: { message?: string; status?: string; errors?: { reason?: string }[] } };
+      detail = [body.error?.status, body.error?.errors?.[0]?.reason, body.error?.message].filter(Boolean).join(' · ');
+    } catch { /* No JSON body. */ }
+    throw new GoogleApiError(response.status, detail);
+  }
   return response.json() as Promise<T>;
 }
