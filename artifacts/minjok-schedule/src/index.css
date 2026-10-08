@@ -336,18 +336,21 @@ button.is-class:hover { background: #f6f9ff; }
 .is-filter.active { background: #fff; color: var(--deep); box-shadow: 0 4px 10px rgba(20,33,79,.2), 0 0 0 1px rgba(20,33,79,.06), inset 0 -3px 0 var(--gold); }
 
 /* ===== Desktop laptop frame: slim bezel + base (mouse + large window only; real phones and tablets stay full-bleed) ===== */
-/* Slim frame on phones and tablets: a thin teal bezel around a rounded screen that scrolls inside it. */
-html, body { height: 100%; overflow: hidden; }
-.is-device {
-  position: fixed; inset: 0; box-sizing: border-box; padding: 6px;
-  background: linear-gradient(160deg, #2a655f 0%, #164340 50%, #0e2f2c 100%);
+/* Phones (< 768px): no frame, the page scrolls normally. The wrappers add no boxes. */
+.is-device, .is-screen, .is-scroll { display: contents; }
+/* Tablets (>= 768px): slim teal bezel around a rounded screen that scrolls inside it. */
+@media (min-width: 768px) {
+  html, body { height: 100%; overflow: hidden; }
+  .is-device {
+    display: block; position: fixed; inset: 0; box-sizing: border-box; padding: 8px;
+    background: linear-gradient(160deg, #2a655f 0%, #164340 50%, #0e2f2c 100%);
+  }
+  .is-screen { display: block; position: relative; height: 100%; overflow: hidden; border-radius: 30px; background: #eaeff8; transform: translateZ(0); }
+  .is-scroll { display: block; height: 100%; overflow-x: hidden; overflow-y: auto; scroll-behavior: smooth; scrollbar-width: none; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; }
+  .is-scroll::-webkit-scrollbar { display: none; }
+  .is-root { min-height: 100%; }
+  .is-shell { min-height: 0; }
 }
-.is-screen { position: relative; height: 100%; overflow: hidden; border-radius: 26px; background: #eaeff8; transform: translateZ(0); }
-.is-scroll { height: 100%; overflow-x: hidden; overflow-y: auto; scroll-behavior: smooth; scrollbar-width: none; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; }
-.is-scroll::-webkit-scrollbar { display: none; }
-.is-root { min-height: 100%; }
-.is-shell { min-height: 0; }
-@media (min-width: 768px) { .is-device { padding: 8px; } .is-screen { border-radius: 30px; } }
 @media (min-width: 900px) and (min-height: 640px) and (hover: hover) and (pointer: fine) {
   html, body { height: 100%; overflow: hidden; }
   body {
