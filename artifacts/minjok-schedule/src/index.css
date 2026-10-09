@@ -393,3 +393,21 @@ button.is-class:hover { background: #f6f9ff; }
 .is-reconnect-later { grid-column: 1 / -1; min-height: 40px; border: 0; background: transparent; color: rgba(255,255,255,.7); font-size: 12px; text-decoration: underline; cursor: pointer; }
 
 .is-timetable-retry { display: flex; align-items: center; justify-content: center; gap: 6px; width: 100%; min-height: 44px; margin: 0 0 8px; border: 1px solid #d9b560; border-radius: 12px; background: #fff1cb; color: #5a400a; font-size: 13px; font-weight: 800; cursor: pointer; }
+
+/* ===== Tablet: four equal cards in a 2 x 2 grid (left: 학교 일정 + 수업 시간표, right: 오늘 챙길 일 + 메모) ===== */
+@media (min-width: 768px) and (not ((min-width: 900px) and (min-height: 640px) and (hover: hover) and (pointer: fine))) {
+  .is-columns:not(.single) { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); grid-template-rows: repeat(2, 372px); gap: 20px; align-items: stretch; }
+  .is-columns:not(.single) > .is-col { display: contents; }
+  .is-columns:not(.single) .is-section { margin: 0; min-height: 0; overflow-y: auto; scrollbar-width: thin; scrollbar-color: rgba(20,33,79,.25) transparent; }
+  .is-columns:not(.single) #integrated-agenda,
+  .is-columns:not(.single) #integrated-tasks { padding: 18px; border: 1px solid var(--card-line); border-radius: 22px; background: #fff; box-shadow: var(--shadow-sm); }
+  .is-columns:not(.single) .is-timetable { padding: 18px; border-radius: 22px; }
+  .is-columns:not(.single) section[aria-label="개인 메모 미리보기"] { padding: 0; overflow: visible; border: 0; background: none; box-shadow: none; }
+  .is-columns:not(.single) .is-note-card { display: flex; flex-direction: column; height: 100%; padding: 18px; border-radius: 22px; }
+  .is-columns:not(.single) .is-note-preview { -webkit-line-clamp: 10; }
+  /* explicit placement keeps the same four slots */
+  .is-columns:not(.single) #integrated-agenda { grid-column: 1; grid-row: 1; }
+  .is-columns:not(.single) .is-timetable { grid-column: 1; grid-row: 2; }
+  .is-columns:not(.single) #integrated-tasks { grid-column: 2; grid-row: 1; }
+  .is-columns:not(.single) section[aria-label="개인 메모 미리보기"] { grid-column: 2; grid-row: 2; }
+}
