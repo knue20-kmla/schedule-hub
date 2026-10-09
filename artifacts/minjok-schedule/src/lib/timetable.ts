@@ -40,23 +40,53 @@ const subjectLabel = (text: string) => {
   return match ? normalize(match[2]) : normalize(text);
 };
 
+export type TimetableFailure = 'timeout' | 'blocked' | 'bad_response' | 'sheet' | 'no_teacher';
+export class TimetableError extends Error {
+  constructor(readonly code: TimetableFailure, message: string = code) { super(message); }
+}
+export function describeTimetableError(error: unknown): string {
+  if (!(error instanceof TimetableError)) return '알 수 없는 오류로 시간표를 불러오지 못했어요.';
+  switch (error.code) {
+    case 'timeout': return '구글 시트가 15초 안에 응답하지 않았어요. 인터넷이 느리거나 막혀 있을 수 있어요.';
+    case 'blocked': return '구글 시트 요청이 막혔어요. 학교 와이파이, 광고 차단, 카카오톡 같은 앱 안 브라우저를 확인해 주세요.';
+    case 'bad_response': return '구글 시트가 예상과 다른 응답을 줬어요. 구글 로그인이나 접근 허용이 필요한 상태일 수 있어요.';
+    case 'no_teacher': return '시트에서 선생님 시간표를 찾지 못했어요.';
+    default: return `구글 시트 오류: ${error.message}`;
+  }
+}
+
+const TIMEOUT_MS = 15000;
 let seq = 0;
 function gvizLoad(sheetName: string): Promise<Table> {
   return new Promise((resolve, reject) => {
     const callback = `__gviz_${Date.now()}_${seq++}`;
     const script = document.createElement('script');
     const w = window as unknown as Record<string, unknown>;
-    const cleanup = () => { delete w[callback]; script.remove(); };
+    let done = false;
+    const finish = (action: () => void) => { if (done) return; done = true; window.clearTimeout(timer); delete w[callback]; script.remove(); action(); };
+    const timer = window.setTimeout(() => finish(() => reject(new TimetableError('timeout', sheetName))), TIMEOUT_MS);
     w[callback] = (response: { status?: string; errors?: { detailed_message?: string }[]; table: Table }) => {
-      cleanup();
-      if (response.status && response.status !== 'ok') { reject(new Error(response.errors?.[0]?.detailed_message ?? response.status)); return; }
-      resolve(response.table);
+      finish(() => {
+        if (response.status && response.status !== 'ok') reject(new TimetableError('sheet', response.errors?.[0]?.detailed_message ?? response.status));
+        else resolve(response.table);
+      });
     };
-    script.onerror = () => { cleanup(); reject(new Error(`${sheetName} 시트를 불러오지 못했어요.`)); };
+    script.onerror = () => finish(() => reject(new TimetableError('blocked', sheetName)));
+    // The script ran but never called us back: the answer was not the expected JSONP (e.g. a sign-in page).
+    script.onload = () => finish(() => reject(new TimetableError('bad_response', sheetName)));
     const tqx = `out:json;responseHandler:${callback}`;
     script.src = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=${encodeURIComponent(tqx)}&sheet=${encodeURIComponent(sheetName)}&cache=${Date.now()}`;
     document.head.appendChild(script);
   });
+}
+
+// One quick retry for transient network trouble (not for permission-type failures).
+async function gvizLoadRetry(sheetName: string): Promise<Table> {
+  try { return await gvizLoad(sheetName); }
+  catch (error) {
+    if (error instanceof TimetableError && (error.code === 'timeout' || error.code === 'blocked')) return gvizLoad(sheetName);
+    throw error;
+  }
 }
 
 const tableRows = (table: Table) => table.rows.map((row) => Array.from({ length: table.cols.length }, (_, i) => cellValue(row.c[i])));
@@ -201,12 +231,12 @@ function buildTimetable(original: string[][], ctx: Ctx, withRoster: boolean): Ti
 }
 
 export async function fetchTimetable(): Promise<Timetable> {
-  const [original, enroll] = await Promise.all([gvizLoad(SHEETS.original), gvizLoad(SHEETS.enroll)]);
-  const rosterResults = await Promise.allSettled(ROSTER_SHEETS.map((name) => gvizLoad(name)));
+  const [original, enroll] = await Promise.all([gvizLoadRetry(SHEETS.original), gvizLoadRetry(SHEETS.enroll)]);
+  const rosterResults = await Promise.allSettled(ROSTER_SHEETS.map((name) => gvizLoadRetry(name)));
   const rosterTables = new Map<string, string[][]>();
   rosterResults.forEach((result, index) => { if (result.status === 'fulfilled') rosterTables.set(ROSTER_SHEETS[index], tableRows(result.value)); });
   const timetable = buildTimetable(tableRows(original), { enroll: buildEnrollment(tableRows(enroll)), roster: buildRoster(rosterTables) }, rosterTables.size > 0);
-  if (!timetable) throw new Error(`원본 시트에서 ${TEACHER} 선생님을 찾지 못했어요.`);
+  if (!timetable) throw new TimetableError('no_teacher');
   // Cache lesson names only; student lists are never written to browser storage by this app.
   try {
     const slim: Timetable = { ...timetable, withRoster: false, days: Object.fromEntries(Object.entries(timetable.days).map(([day, lessons]) => [day, lessons.map((lesson) => ({ ...lesson, groups: [] }))])) };

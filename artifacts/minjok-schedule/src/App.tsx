@@ -8,7 +8,7 @@ import {
   type AccessToken, type LiveEvent,
 } from '@/lib/google-calendar';
 import {
-  TIMETABLE_APP_URL, fetchTimetable, readCachedTimetable, splitLesson, type Lesson, type Timetable,
+  TIMETABLE_APP_URL, describeTimetableError, fetchTimetable, readCachedTimetable, splitLesson, type Lesson, type Timetable,
 } from '@/lib/timetable';
 import {
   STORAGE_KEY as ATTENDANCE_KEY, clearSession, countMarked, loadRecords, toggleStatus,
@@ -154,6 +154,7 @@ export default function App() {
   const gisReady = useRef(false);
   const [liveTimetable, setLiveTimetable] = useState<Timetable | null>(readCachedTimetable);
   const [timetableState, setTimetableState] = useState<'loading' | 'ok' | 'error'>('loading');
+  const [timetableProblem, setTimetableProblem] = useState('');
   const [records, setRecords] = useState<Records>(loadRecords);
   const [attendancePeriod, setAttendancePeriod] = useState<number | null>(null);
   const [mailOpen, setMailOpen] = useState(false);
@@ -198,13 +199,16 @@ export default function App() {
     ? `구글 시트의 시간표예요 · ${new Date(liveTimetable!.loadedAt).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })} 기준 · 수업을 누르면 명단과 출결을 볼 수 있어요`
     : timetableState === 'loading'
       ? (liveTimetable ? '저장된 시간표를 보여주며 최신 시간표를 불러오는 중이에요.' : '시간표를 불러오는 중이에요…')
-      : liveTimetable ? '최신 시간표를 불러오지 못해 저장된 시간표를 보여줘요.' : '시간표를 불러오지 못해 샘플을 보여줘요.';
+      : `${liveTimetable ? '최신 시간표를 불러오지 못해 저장된 시간표를 보여줘요.' : '시간표를 불러오지 못해 샘플을 보여줘요.'} ${timetableProblem}`;
 
-  useEffect(() => {
+  const loadTimetable = () => {
+    setTimetableState('loading');
+    setTimetableProblem('');
     fetchTimetable()
       .then((fresh) => { setLiveTimetable(fresh); setTimetableState('ok'); })
-      .catch(() => setTimetableState('error'));
-  }, []);
+      .catch((error) => { setTimetableProblem(describeTimetableError(error)); setTimetableState('error'); });
+  };
+  useEffect(() => { loadTimetable(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     const onPrompt = (event: Event) => { event.preventDefault(); setInstallEvent(event as InstallPrompt); };
     const onInstalled = () => { setInstallEvent(null); setStandalone(true); };
@@ -538,6 +542,7 @@ export default function App() {
                 {item.marked ? <span className="is-class-mark" data-testid={`marked-${item.time}`}>출결 {item.marked}</span> : null}
               </button>)}</div>
           <p className="is-timetable-note" data-testid="text-timetable-note">{timetableNote}</p>
+          {timetableState === 'error' && <button type="button" className="is-timetable-retry" onClick={loadTimetable} data-testid="button-timetable-retry"><RefreshCw size={13} /> 시간표 다시 불러오기</button>}
           <a className="is-timetable-connect" href={TIMETABLE_APP_URL} target="_blank" rel="noopener noreferrer" aria-label="시간표·출결부 앱을 새 창으로 열기" data-testid="link-timetable-app">
             <BookOpen size={13} /><span>시간표 · 출결부 앱</span><span className="is-connect-status">새 창</span>
           </a>

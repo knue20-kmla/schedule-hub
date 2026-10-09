@@ -391,3 +391,5 @@ button.is-class:hover { background: #f6f9ff; }
 .is-reconnect-text span { color: rgba(255,255,255,.8); font-size: 12px; }
 .is-reconnect-go { min-height: 44px; padding: 0 14px; border: 0; border-radius: 14px; background: var(--gold-soft); color: #3a2a05; font-size: 13px; font-weight: 850; cursor: pointer; }
 .is-reconnect-later { grid-column: 1 / -1; min-height: 40px; border: 0; background: transparent; color: rgba(255,255,255,.7); font-size: 12px; text-decoration: underline; cursor: pointer; }
+
+.is-timetable-retry { display: flex; align-items: center; justify-content: center; gap: 6px; width: 100%; min-height: 44px; margin: 0 0 8px; border: 1px solid #d9b560; border-radius: 12px; background: #fff1cb; color: #5a400a; font-size: 13px; font-weight: 800; cursor: pointer; }
