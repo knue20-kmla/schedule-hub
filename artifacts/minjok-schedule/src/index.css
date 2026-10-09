@@ -411,3 +411,47 @@ button.is-class:hover { background: #f6f9ff; }
   .is-columns:not(.single) #integrated-tasks { grid-column: 2; grid-row: 1; }
   .is-columns:not(.single) section[aria-label="개인 메모 미리보기"] { grid-column: 2; grid-row: 2; }
 }
+
+/* ===== Tablet: compact the four cards so the whole dashboard fits on one screen ===== */
+@media (min-width: 768px) and (not ((min-width: 900px) and (min-height: 640px) and (hover: hover) and (pointer: fine))) {
+  .is-campus-hero { height: 176px; }
+  .is-heading { font-size: 34px; }
+  .is-date-strip { margin: 12px 0 10px; }
+  .is-day { height: 58px; }
+  .is-columns:not(.single) { grid-template-rows: repeat(2, 200px); gap: 14px; }
+  .is-columns:not(.single) #integrated-agenda,
+  .is-columns:not(.single) #integrated-tasks,
+  .is-columns:not(.single) .is-timetable,
+  .is-columns:not(.single) .is-note-card { padding: 12px 14px; }
+  .is-columns:not(.single) .is-section-head { margin-bottom: 6px; }
+  .is-columns:not(.single) .is-section-title { font-size: 17px; }
+  .is-columns:not(.single) .is-section-sub { margin-top: 1px; font-size: 11px; line-height: 1.35; }
+  .is-columns:not(.single) .is-title-row .is-section-title { font-size: 17px; }
+  /* agenda */
+  .is-columns:not(.single) .is-event-list { gap: 5px; }
+  .is-columns:not(.single) .is-event { min-height: 40px; }
+  .is-columns:not(.single) .is-event-body { padding: 5px 10px 5px 14px; border-radius: 11px; }
+  .is-columns:not(.single) .is-event-title { font-size: 13px; }
+  .is-columns:not(.single) .is-event-note { margin-top: 1px; font-size: 11px; }
+  .is-columns:not(.single) .is-event-time { padding-top: 6px; }
+  .is-columns:not(.single) .is-event-marker { margin-top: 7px; }
+  /* tasks */
+  .is-columns:not(.single) .is-task-list { gap: 5px; }
+  .is-columns:not(.single) .is-task { min-height: 46px; padding: 5px 10px; border-radius: 13px; }
+  .is-columns:not(.single) .is-task-title { font-size: 13px; }
+  .is-columns:not(.single) .is-task-detail { margin-top: 1px; font-size: 11px; }
+  .is-columns:not(.single) .is-add { min-height: 40px; margin-top: 6px; }
+  /* timetable */
+  .is-columns:not(.single) .is-timetable-head { margin-bottom: 7px; }
+  .is-columns:not(.single) .is-class { padding: 6px 8px; gap: 2px; }
+  .is-columns:not(.single) .is-timetable-note { margin: 6px 1px; font-size: 11px; line-height: 1.4; }
+  .is-columns:not(.single) .is-timetable-connect { min-height: 40px; }
+  /* memo */
+  .is-columns:not(.single) .is-note-head { margin-bottom: 5px; }
+  .is-columns:not(.single) .is-note-preview { -webkit-line-clamp: 5; }
+}
+@media (min-width: 768px) and (not ((min-width: 900px) and (min-height: 640px) and (hover: hover) and (pointer: fine))) {
+  .is-columns:not(.single) { grid-template-rows: repeat(2, 226px); }
+  .is-columns:not(.single) #integrated-agenda .is-section-sub,
+  .is-columns:not(.single) #integrated-tasks .is-section-sub { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+}
