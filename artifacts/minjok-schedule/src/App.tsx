@@ -12,7 +12,7 @@ import {
 } from '@/lib/timetable';
 import {
   STORAGE_KEY as ATTENDANCE_KEY, clearSession, countMarked, loadRecords, toggleStatus,
-  type EntryInfo, type Records, type SessionInfo, type Status,
+  type EntryInfo, type Recognition, type Records, type SessionInfo, type Status,
 } from '@/lib/attendance';
 import { readStoredMailToken } from '@/lib/gmail';
 import { releaseService, requestServices, serviceLabel, type Service } from '@/lib/connect';
@@ -414,8 +414,8 @@ export default function App() {
   function changeAttendance(apply: () => Records) {
     try { setRecords(apply()); } catch { flash('이 기기에 출결을 저장하지 못했어요. 브라우저 저장 공간을 확인해 주세요.'); }
   }
-  function toggleAttendance(entry: EntryInfo, status: Status) {
-    if (attendanceLesson) changeAttendance(() => toggleStatus(sessionOf(attendanceLesson), entry, status));
+  function toggleAttendance(entry: EntryInfo, status: Status, recognition: Recognition) {
+    if (attendanceLesson) changeAttendance(() => toggleStatus(sessionOf(attendanceLesson), entry, status, recognition));
   }
   function clearAttendance() {
     if (attendanceLesson && window.confirm('이 수업의 출결 기록을 모두 지울까요?')) changeAttendance(() => clearSession(sessionOf(attendanceLesson)));

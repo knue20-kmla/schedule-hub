@@ -2,14 +2,18 @@
 // timetable/attendance app (kim-taewan-attendance). Both apps are served from knue20-kmla.github.io,
 // so on one device/browser they read and write the same records.
 // Only exceptions are stored (지각/결석/조퇴); a student without a record counts as present.
+// 인정/미인정 is stored in a separate `recognition` field so `status` stays 지각/결석/조퇴 and the standalone app
+// keeps working (it ignores the extra field and shows the record as a plain 지각/결석/조퇴).
 
 export const STORAGE_KEY = 'kim-taewan-attendance-v2';
 export const STATUSES = ['지각', '결석', '조퇴'] as const;
 export type Status = (typeof STATUSES)[number];
+export const RECOGNITIONS = ['미인정', '인정'] as const;
+export type Recognition = (typeof RECOGNITIONS)[number];
 
 export type AttendanceRecord = {
   date: string; sessionKey: string; sessionLabel: string; subject: string; day: string; period: string;
-  section: string; student: string; status: string; updatedAt: string;
+  section: string; student: string; status: string; recognition?: string; updatedAt: string;
 };
 export type Records = Record<string, AttendanceRecord>;
 
@@ -33,17 +37,22 @@ export function statusOf(records: Records, session: SessionInfo, section: string
   return records[recordKey(session.date, sessionKeyOf(session.date, session.period), section, student)]?.status ?? '';
 }
 
-// Read-modify-write so changes made meanwhile in the other app/tab are not lost. Tapping the active status clears it.
-export function toggleStatus(session: SessionInfo, entry: EntryInfo, status: Status): Records {
+export function recognitionOf(records: Records, session: SessionInfo, section: string, student: string): string {
+  return records[recordKey(session.date, sessionKeyOf(session.date, session.period), section, student)]?.recognition ?? '';
+}
+
+// Read-modify-write so changes made meanwhile in the other app/tab are not lost.
+// Tapping the active status with the same 인정/미인정 clears it; with the other one it switches the recognition.
+export function toggleStatus(session: SessionInfo, entry: EntryInfo, status: Status, recognition: Recognition): Records {
   const records = loadRecords();
   const sessionKey = sessionKeyOf(session.date, session.period);
   const key = recordKey(session.date, sessionKey, entry.section, entry.student);
-  if (records[key]?.status === status) delete records[key];
+  if (records[key]?.status === status && records[key]?.recognition === recognition) delete records[key];
   else {
     records[key] = {
       date: session.date, sessionKey, sessionLabel: `${session.period}교시 · ${session.label}`,
       subject: entry.subject || session.subject, day: session.day, period: String(session.period),
-      section: entry.section, student: entry.student, status, updatedAt: new Date().toISOString(),
+      section: entry.section, student: entry.student, status, recognition, updatedAt: new Date().toISOString(),
     };
   }
   saveRecords(records);
