@@ -11,6 +11,8 @@ type Props = {
   dateLabel: string;
   groups: Group[];
   rosterLoaded: boolean;
+  failedRosters?: string[];
+  onRetryRoster?: () => void;
   records: Records;
   onToggle: (entry: EntryInfo, status: Status, recognition: Recognition) => void;
   onClear: () => void;
@@ -21,7 +23,7 @@ const STATUS_CLASS: Record<Status, string> = { 지각: 'late', 결석: 'absent',
 const MODE_KEY = 'minjok-schedule.att-recognition.v1';
 const readMode = (): Recognition => { try { return localStorage.getItem(MODE_KEY) === '인정' ? '인정' : '미인정'; } catch { return '미인정'; } };
 
-export function AttendanceSheet({ session, dateLabel, groups, rosterLoaded, records, onToggle, onClear, onClose }: Props) {
+export function AttendanceSheet({ session, dateLabel, groups, rosterLoaded, failedRosters, onRetryRoster, records, onToggle, onClear, onClose }: Props) {
   // The upper level (미인정 / 인정) is chosen first; the 지각·결석·조퇴 buttons then save with that choice.
   const [mode, setMode] = useState<Recognition>(readMode);
   const chooseMode = (next: Recognition) => { setMode(next); try { localStorage.setItem(MODE_KEY, next); } catch { /* Optional. */ } };
@@ -95,7 +97,14 @@ export function AttendanceSheet({ session, dateLabel, groups, rosterLoaded, reco
               })}
             </section>
           ))}
-          {!total && <div className="is-empty-filter" data-testid="status-no-roster">{rosterLoaded ? '이 수업은 시트에 수강생 명단이 없어요.' : '학생 명단은 시트를 불러온 뒤에 볼 수 있어요. 인터넷 연결을 확인해 주세요.'}</div>}
+          {!total && (
+            <div className="is-empty-filter" data-testid="status-no-roster">
+              {failedRosters?.length
+                ? `명단 시트(${failedRosters.join(', ')})를 불러오지 못했어요. 인터넷 연결을 확인하고 다시 불러와 주세요.`
+                : rosterLoaded ? '이 수업은 시트에 수강생 명단이 없어요.' : '학생 명단은 시트를 불러온 뒤에 볼 수 있어요. 인터넷 연결을 확인해 주세요.'}
+              {(failedRosters?.length || !rosterLoaded) && onRetryRoster ? <button type="button" className="is-timetable-retry" style={{ marginTop: 10 }} onClick={onRetryRoster} data-testid="button-roster-retry">명단 다시 불러오기</button> : null}
+            </div>
+          )}
           {total > 0 && <p className="is-modal-hint">기록하지 않은 학생은 출석으로 봐요. 같은 구분으로 같은 버튼을 다시 누르면 취소돼요. 기존 시간표·출결부 앱과 같은 기록을 쓰고, 그 앱에서는 인정/미인정이 아직 표시되지 않아요(지각·결석·조퇴로만 보여요).</p>}
           {marked > 0 && <button type="button" className="is-att-clear" onClick={onClear} data-testid="button-clear-attendance">이 수업 출결 기록 모두 지우기</button>}
         </div>

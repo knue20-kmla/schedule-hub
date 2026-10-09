@@ -18,7 +18,6 @@ export function useDriveSync(getSnapshot: () => SyncSnapshot, apply: (snapshot: 
   const [lastAt, setLastAt] = useState<number | null>(null);
   const gisReady = useRef(false);
   const busy = useRef(false);
-  const skipNext = useRef(false);
   const getRef = useRef(getSnapshot);
   const applyRef = useRef(apply);
   getRef.current = getSnapshot;
@@ -33,7 +32,7 @@ export function useDriveSync(getSnapshot: () => SyncSnapshot, apply: (snapshot: 
     setMessage('');
     try {
       const result = await syncOnce(active, getRef.current());
-      if (result.changedLocal) { skipNext.current = true; applyRef.current(result.merged); }
+      if (result.changedLocal) applyRef.current(result.merged);
       setLastAt(Date.now());
       setStatus('ok');
     } catch (error) {
@@ -82,7 +81,6 @@ export function useDriveSync(getSnapshot: () => SyncSnapshot, apply: (snapshot: 
   const firstChange = useRef(true);
   useEffect(() => {
     if (firstChange.current) { firstChange.current = false; return undefined; }
-    if (skipNext.current) { skipNext.current = false; return undefined; }
     if (!token) return undefined;
     let timer = 0;
     const attempt = () => { if (busy.current) { timer = window.setTimeout(attempt, 1500); return; } void run(token); };

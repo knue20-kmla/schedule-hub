@@ -33,6 +33,27 @@ function saveRecords(records: Records) {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(records));
 }
 
+// Removed records are remembered (key -> time) so device sync does not bring them back. The standalone
+// attendance app writes to the same key when it removes a record.
+export const DELETED_KEY = 'minjok-schedule.att-deleted.v1';
+export function loadDeleted(): Record<string, number> {
+  try {
+    const parsed: unknown = JSON.parse(localStorage.getItem(DELETED_KEY) || '{}');
+    return parsed && typeof parsed === 'object' ? (parsed as Record<string, number>) : {};
+  } catch { return {}; }
+}
+function markDeleted(keys: string[]) {
+  if (!keys.length) return;
+  const map = loadDeleted();
+  const now = Date.now();
+  keys.forEach((key) => { map[key] = now; });
+  try { localStorage.setItem(DELETED_KEY, JSON.stringify(map)); } catch { /* Optional. */ }
+}
+export function replaceAll(records: Records, deleted: Record<string, number>) {
+  saveRecords(records);
+  try { localStorage.setItem(DELETED_KEY, JSON.stringify(deleted)); } catch { /* Optional. */ }
+}
+
 export function statusOf(records: Records, session: SessionInfo, section: string, student: string): string {
   return records[recordKey(session.date, sessionKeyOf(session.date, session.period), section, student)]?.status ?? '';
 }
@@ -47,7 +68,7 @@ export function toggleStatus(session: SessionInfo, entry: EntryInfo, status: Sta
   const records = loadRecords();
   const sessionKey = sessionKeyOf(session.date, session.period);
   const key = recordKey(session.date, sessionKey, entry.section, entry.student);
-  if (records[key]?.status === status && records[key]?.recognition === recognition) delete records[key];
+  if (records[key]?.status === status && records[key]?.recognition === recognition) { delete records[key]; markDeleted([key]); }
   else {
     records[key] = {
       date: session.date, sessionKey, sessionLabel: `${session.period}교시 · ${session.label}`,
@@ -62,7 +83,9 @@ export function toggleStatus(session: SessionInfo, entry: EntryInfo, status: Sta
 export function clearSession(session: SessionInfo): Records {
   const records = loadRecords();
   const sessionKey = sessionKeyOf(session.date, session.period);
-  Object.keys(records).forEach((key) => { if (records[key].date === session.date && records[key].sessionKey === sessionKey) delete records[key]; });
+  const removed: string[] = [];
+  Object.keys(records).forEach((key) => { if (records[key].date === session.date && records[key].sessionKey === sessionKey) { delete records[key]; removed.push(key); } });
+  markDeleted(removed);
   saveRecords(records);
   return records;
 }

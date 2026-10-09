@@ -11,13 +11,13 @@ import {
   TIMETABLE_APP_URL, describeTimetableError, fetchTimetable, readCachedTimetable, splitLesson, type Lesson, type Timetable,
 } from '@/lib/timetable';
 import {
-  STORAGE_KEY as ATTENDANCE_KEY, clearSession, countMarked, loadRecords, toggleStatus,
+  STORAGE_KEY as ATTENDANCE_KEY, clearSession, countMarked, loadDeleted as loadAttendanceDeleted, loadRecords, replaceAll as replaceAttendance, toggleStatus,
   type EntryInfo, type Recognition, type Records, type SessionInfo, type Status,
 } from '@/lib/attendance';
 import { readStoredMailToken } from '@/lib/gmail';
 import { releaseService, requestServices, serviceLabel, type Service } from '@/lib/connect';
 import { useDriveSync } from '@/lib/use-drive-sync';
-import type { SyncSnapshot, SyncTask } from '@/lib/drive-sync';
+import type { SyncRecord, SyncSnapshot, SyncTask } from '@/lib/drive-sync';
 import { AttendanceSheet } from '@/components/attendance-sheet';
 import { MailSheet } from '@/components/mail-sheet';
 
@@ -102,6 +102,7 @@ const STORAGE_LINKED = 'minjok-schedule.google-linked.v1';
 const STORAGE_MAIL_LINKED = 'minjok-schedule.mail-linked.v1';
 const STORAGE_NOTE = 'minjok-schedule.note.v1';
 const STORAGE_NOTE_AT = 'minjok-schedule.note-at.v1';
+const STORAGE_SYNC_ATTENDANCE = 'minjok-schedule.sync-attendance.v1';
 const STORAGE_DELETED = 'minjok-schedule.tasks-deleted.v1';
 
 function loadTasks(): PlannerTask[] {
@@ -170,6 +171,7 @@ export default function App() {
   const [note, setNote] = useState(loadNote);
   const [noteDraft, setNoteDraft] = useState(note);
   const [noteAt, setNoteAt] = useState(loadNoteAt);
+  const [syncAttendance, setSyncAttendance] = useState(() => { try { return localStorage.getItem(STORAGE_SYNC_ATTENDANCE) !== '0'; } catch { return true; } });
   const [deleted, setDeleted] = useState(loadDeleted);
   const [profileOpen, setProfileOpen] = useState(false);
   const [installEvent, setInstallEvent] = useState<InstallPrompt | null>(null);
@@ -203,6 +205,7 @@ export default function App() {
     : timetableState === 'loading'
       ? (liveTimetable ? '저장된 시간표를 보여주며 최신 시간표를 불러오는 중이에요.' : '시간표를 불러오는 중이에요…')
       : `${liveTimetable ? '최신 시간표를 불러오지 못해 저장된 시간표를 보여줘요.' : '시간표를 불러오지 못해 샘플을 보여줘요.'} ${timetableProblem}`;
+  const rosterProblem = timetableState === 'ok' && liveTimetable ? (liveTimetable.failedRosters?.length ? `명단 시트(${liveTimetable.failedRosters.join(', ')})를 불러오지 못했어요.` : !liveTimetable.withRoster ? '학생 명단을 불러오지 못했어요.' : '') : '';
 
   const loadTimetable = () => {
     setTimetableState('loading');
@@ -248,14 +251,22 @@ export default function App() {
 
   // Device sync (Google Drive app-data folder): tasks and the private memo only.
   const sync = useDriveSync(
-    (): SyncSnapshot => ({ tasks: tasks as unknown as SyncTask[], deleted, note: { text: note, at: noteAt } }),
+    (): SyncSnapshot => ({
+      tasks: tasks as unknown as SyncTask[], deleted, note: { text: note, at: noteAt },
+      // Read straight from storage so edits made in the Kim Taewan attendance app are included.
+      ...(syncAttendance ? { attendance: { records: loadRecords() as unknown as Record<string, SyncRecord>, deleted: loadAttendanceDeleted() } } : {}),
+    }),
     (merged) => {
       setTasks(merged.tasks as unknown as PlannerTask[]);
       setDeleted(merged.deleted);
       setNote(merged.note.text);
       setNoteAt(merged.note.at);
+      if (syncAttendance && merged.attendance) {
+        replaceAttendance(merged.attendance.records as unknown as Records, merged.attendance.deleted);
+        setRecords(merged.attendance.records as unknown as Records);
+      }
     },
-    JSON.stringify([tasks, deleted, note, noteAt]),
+    JSON.stringify([tasks, deleted, note, noteAt, syncAttendance ? records : null]),
   );
   const syncCaption = sync.status === 'syncing' ? '동기화 중…'
     : sync.status === 'ok' ? `동기화됨 · ${new Date(sync.lastAt ?? Date.now()).toLocaleTimeString('ko-KR', { hour: 'numeric', minute: '2-digit' })}`
@@ -282,6 +293,11 @@ export default function App() {
   function toggleTask(id: number) {
     setTasks((current) => current.map((task) => task.id === id ? { ...task, done: !task.done, updatedAt: Date.now() } : task));
     flash('작은 한 걸음, 잘 해냈어요.');
+  }
+  function toggleSyncAttendance(on: boolean) {
+    setSyncAttendance(on);
+    try { localStorage.setItem(STORAGE_SYNC_ATTENDANCE, on ? '1' : '0'); } catch { /* Optional. */ }
+    flash(on ? '출결 기록도 동기화해요.' : '출결 기록은 이 기기에만 저장돼요. (이미 올라간 기록은 드라이브에 남아 있어요)');
   }
   async function installApp() {
     if (!installEvent) return;
@@ -555,8 +571,8 @@ export default function App() {
                 <span className="is-class-room">{item.room}{item.room && item.count ? ' · ' : ''}{item.count ? `${item.count}명` : ''}</span>
                 {item.marked ? <span className="is-class-mark" data-testid={`marked-${item.time}`}>출결 {item.marked}</span> : null}
               </button>)}</div>
-          <p className="is-timetable-note" data-testid="text-timetable-note">{timetableNote}</p>
-          {timetableState === 'error' && <button type="button" className="is-timetable-retry" onClick={loadTimetable} data-testid="button-timetable-retry"><RefreshCw size={13} /> 시간표 다시 불러오기</button>}
+          <p className="is-timetable-note" data-testid="text-timetable-note">{timetableNote}{rosterProblem ? ` · ${rosterProblem}` : ''}</p>
+          {(timetableState === 'error' || rosterProblem) && <button type="button" className="is-timetable-retry" onClick={loadTimetable} data-testid="button-timetable-retry"><RefreshCw size={13} /> 시간표 다시 불러오기</button>}
           <a className="is-timetable-connect" href={TIMETABLE_APP_URL} target="_blank" rel="noopener noreferrer" aria-label="시간표·출결부 앱을 새 창으로 열기" data-testid="link-timetable-app">
             <BookOpen size={13} /><span>시간표 · 출결부 앱</span><span className="is-connect-status">새 창</span>
           </a>
@@ -627,6 +643,10 @@ export default function App() {
             <div className="is-source-copy"><span className="is-source-title">기기 간 동기화</span><span className="is-source-caption" data-testid="text-sync-caption">{syncCaption}</span></div>
             <button type="button" className="is-sync" onClick={() => { if (sync.token) void sync.syncNow(); else void reconnect('drive'); }} disabled={sync.status === 'syncing' || reconnecting} aria-label={sync.linked ? '지금 동기화' : '구글 드라이브 연결'} data-testid="button-sync-now"><span>{sync.token ? '지금 동기화' : sync.linked ? '다시 연결' : '드라이브 연결'}</span></button>
           </div>
+          {sync.linked && <label className="is-sync-opt" data-testid="label-sync-attendance">
+            <input type="checkbox" checked={syncAttendance} onChange={(event) => toggleSyncAttendance(event.target.checked)} data-testid="toggle-sync-attendance" />
+            <span><strong>출결 기록도 동기화</strong><small>학생 이름이 포함돼요. 내 구글 드라이브의 앱 전용 숨김 폴더에만 저장돼요.</small></span>
+          </label>}
           {sync.linked && <button type="button" className="is-link-btn" onClick={unlinkDrive} data-testid="button-sync-unlink">동기화 해제 (이 기기의 연결만 끊어요)</button>}
           <div className="is-source-card" data-testid="status-google-calendar">
             <span className="is-google-mark"><CalendarDays size={17} strokeWidth={1.8} /></span>
@@ -644,7 +664,7 @@ export default function App() {
           </div>
           <p className="is-modal-hint">연결한 서비스(캘린더·Gmail·드라이브)는 로그인이 풀리면 위쪽 구름 아이콘 한 번으로 한꺼번에 다시 연결돼요.</p>
           <p className="is-modal-hint">일정은 읽기만 해요. 메일은 읽고 휴지통으로 옮기는 것만 하고, 보내거나 영구 삭제하지 않아요. 불러온 내용은 이 기기에서만 보이고 따로 저장하지 않아요.</p>
-          <p className="is-modal-hint">메모와 할 일은 이 기기에 저장되고, 동기화를 켜면 내 구글 드라이브의 앱 전용 숨김 폴더를 통해 다른 기기와 맞춰져요. 출결 기록은 학생 정보가 있어서 동기화하지 않고 이 기기에만 저장돼요(시간표·출결부 앱과 같은 기록).</p>
+          <p className="is-modal-hint">메모와 할 일은 이 기기에 저장되고, 동기화를 켜면 내 구글 드라이브의 앱 전용 숨김 폴더를 통해 다른 기기와 맞춰져요. 출결 기록은 학생 이름이 있어서 위의 "출결 기록도 동기화"를 켠 경우에만 올라가요(시간표·출결부 앱과 같은 기록).</p>
         </section>
       </div>}
       {attendanceLesson && <AttendanceSheet
@@ -652,6 +672,8 @@ export default function App() {
         dateLabel={`${selectedDay.month}월 ${selectedDay.date}일 (${selectedDay.day})`}
         groups={attendanceLesson.groups}
         rosterLoaded={Boolean(liveTimetable?.withRoster)}
+        failedRosters={liveTimetable?.failedRosters}
+        onRetryRoster={loadTimetable}
         records={records}
         onToggle={toggleAttendance}
         onClear={clearAttendance}

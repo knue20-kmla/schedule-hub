@@ -1,6 +1,7 @@
 // Syncs tasks and the private memo across devices through the signed-in user's own Google Drive
 // "app data" folder: a hidden, per-app folder that only this app can read (scope drive.appdata).
-// There is no server of ours in between. Attendance records are intentionally NOT synced.
+// There is no server of ours in between. Attendance records (with student names) are synced too, but only
+// while the "출결 기록도 동기화" switch is on; with it off the remote copy is left untouched.
 import {
   googleGet, googleSend, readStoredToken as readSlot, requestToken as requestSlot, revokeToken,
   type AccessToken,
@@ -20,10 +21,29 @@ export const disconnectDrive = (token: AccessToken | null) => revokeToken(SLOT, 
 
 export type SyncTask = { id: number; updatedAt?: number } & Record<string, unknown>;
 export type SyncNote = { text: string; at: number };
-export type SyncSnapshot = { tasks: SyncTask[]; deleted: Record<string, number>; note: SyncNote };
-type RemoteFile = { v: 1; tasks: Record<string, SyncTask>; deleted: Record<string, number>; note: SyncNote };
+export type SyncRecord = { updatedAt?: string } & Record<string, unknown>;
+export type SyncAttendance = { records: Record<string, SyncRecord>; deleted: Record<string, number> };
+export type SyncSnapshot = { tasks: SyncTask[]; deleted: Record<string, number>; note: SyncNote; attendance?: SyncAttendance };
+type RemoteFile = { v: 1; tasks: Record<string, SyncTask>; deleted: Record<string, number>; note: SyncNote; attendance?: SyncAttendance };
 
 const stamp = (task: SyncTask | undefined) => task?.updatedAt ?? 0;
+const recordStamp = (record: SyncRecord | undefined) => (record?.updatedAt ? Date.parse(record.updatedAt) || 0 : 0);
+
+// Same last-writer-wins rule per attendance record, with tombstones for removed records.
+function mergeAttendance(local: SyncAttendance, remote: SyncAttendance, now: number): SyncAttendance {
+  const deleted: Record<string, number> = {};
+  [local.deleted, remote.deleted].forEach((map) => Object.entries(map).forEach(([key, at]) => {
+    if (now - at < TOMBSTONE_TTL) deleted[key] = Math.max(deleted[key] ?? 0, at);
+  }));
+  const records: Record<string, SyncRecord> = {};
+  new Set([...Object.keys(local.records), ...Object.keys(remote.records)]).forEach((key) => {
+    const l = local.records[key];
+    const r = remote.records[key];
+    const pick = l && r ? (recordStamp(r) > recordStamp(l) ? r : l) : (l ?? r);
+    if (pick && (deleted[key] ?? 0) <= recordStamp(pick)) records[key] = pick;
+  });
+  return { records, deleted };
+}
 
 // Last-writer-wins per task and for the memo; deletions are remembered as tombstones so a task removed on
 // one device is not brought back by another.
@@ -52,7 +72,9 @@ export function mergeSnapshots(local: SyncSnapshot, remote: SyncSnapshot | null,
   fresh.sort((a, b) => Number(b.id) - Number(a.id));
 
   const note = remote.note.at > local.note.at ? remote.note : local.note;
-  return { tasks: [...fresh, ...kept], deleted, note };
+  // Attendance off on this device: keep whatever the cloud already has instead of dropping it.
+  const attendance = local.attendance ? (remote.attendance ? mergeAttendance(local.attendance, remote.attendance, now) : local.attendance) : remote.attendance;
+  return { tasks: [...fresh, ...kept], deleted, note, ...(attendance ? { attendance } : {}) };
 }
 
 export const sameSnapshot = (a: SyncSnapshot, b: SyncSnapshot) => {
@@ -60,6 +82,7 @@ export const sameSnapshot = (a: SyncSnapshot, b: SyncSnapshot) => {
     tasks: [...s.tasks].sort((x, y) => Number(x.id) - Number(y.id)),
     deleted: Object.fromEntries(Object.entries(s.deleted).sort()),
     note: s.note,
+    attendance: s.attendance ? { records: Object.fromEntries(Object.entries(s.attendance.records).sort()), deleted: Object.fromEntries(Object.entries(s.attendance.deleted).sort()) } : null,
   });
   return norm(a) === norm(b);
 };
@@ -69,11 +92,13 @@ const toRemote = (snapshot: SyncSnapshot): RemoteFile => ({
   tasks: Object.fromEntries(snapshot.tasks.map((task) => [String(task.id), task])),
   deleted: snapshot.deleted,
   note: snapshot.note,
+  ...(snapshot.attendance ? { attendance: snapshot.attendance } : {}),
 });
 const fromRemote = (file: RemoteFile): SyncSnapshot => ({
   tasks: Object.values(file.tasks ?? {}),
   deleted: file.deleted ?? {},
   note: file.note ?? { text: '', at: 0 },
+  ...(file.attendance ? { attendance: file.attendance } : {}),
 });
 
 async function findFile(token: AccessToken): Promise<string | null> {
@@ -112,5 +137,7 @@ export async function syncOnce(token: AccessToken, local: SyncSnapshot) {
   const merged = mergeSnapshots(local, snapshot);
   const needsUpload = !snapshot || !sameSnapshot(merged, snapshot);
   if (needsUpload) await writeRemote(token, id, merged);
-  return { merged, changedLocal: !sameSnapshot(merged, local), uploaded: needsUpload };
+  // Cloud-only attendance (switch off here) is not something to apply locally.
+  const mergedForLocal = local.attendance ? merged : { ...merged, attendance: undefined };
+  return { merged, changedLocal: !sameSnapshot(mergedForLocal, local), uploaded: needsUpload };
 }

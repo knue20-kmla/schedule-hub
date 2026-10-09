@@ -19,7 +19,7 @@ const CACHE_KEY = 'minjok-schedule.timetable.v2';
 
 export type Group = { label: string; subject: string; students: string[] };
 export type Lesson = { period: number; text: string; subject: string; groups: Group[] };
-export type Timetable = { loadedAt: number; days: Record<string, Lesson[]>; withRoster: boolean };
+export type Timetable = { loadedAt: number; days: Record<string, Lesson[]>; withRoster: boolean; failedRosters?: string[] };
 
 type Cell = { v?: unknown; f?: unknown } | null | undefined;
 type Table = { cols: unknown[]; rows: { c: Cell[] }[] };
@@ -56,15 +56,17 @@ export function describeTimetableError(error: unknown): string {
 }
 
 const TIMEOUT_MS = 15000;
+const ROSTER_TIMEOUT_MS = 30000; // roster sheets are bigger; slow tablets/networks need longer
+const ROSTER_PARALLEL = 2; // fewer simultaneous requests so a slow connection is not flooded
 let seq = 0;
-function gvizLoad(sheetName: string): Promise<Table> {
+function gvizLoad(sheetName: string, timeoutMs = TIMEOUT_MS): Promise<Table> {
   return new Promise((resolve, reject) => {
     const callback = `__gviz_${Date.now()}_${seq++}`;
     const script = document.createElement('script');
     const w = window as unknown as Record<string, unknown>;
     let done = false;
     const finish = (action: () => void) => { if (done) return; done = true; window.clearTimeout(timer); delete w[callback]; script.remove(); action(); };
-    const timer = window.setTimeout(() => finish(() => reject(new TimetableError('timeout', sheetName))), TIMEOUT_MS);
+    const timer = window.setTimeout(() => finish(() => reject(new TimetableError('timeout', sheetName))), timeoutMs);
     w[callback] = (response: { status?: string; errors?: { detailed_message?: string }[]; table: Table }) => {
       finish(() => {
         if (response.status && response.status !== 'ok') reject(new TimetableError('sheet', response.errors?.[0]?.detailed_message ?? response.status));
@@ -81,10 +83,10 @@ function gvizLoad(sheetName: string): Promise<Table> {
 }
 
 // One quick retry for transient network trouble (not for permission-type failures).
-async function gvizLoadRetry(sheetName: string): Promise<Table> {
-  try { return await gvizLoad(sheetName); }
+async function gvizLoadRetry(sheetName: string, timeoutMs = TIMEOUT_MS): Promise<Table> {
+  try { return await gvizLoad(sheetName, timeoutMs); }
   catch (error) {
-    if (error instanceof TimetableError && (error.code === 'timeout' || error.code === 'blocked')) return gvizLoad(sheetName);
+    if (error instanceof TimetableError && (error.code === 'timeout' || error.code === 'blocked')) return gvizLoad(sheetName, timeoutMs);
     throw error;
   }
 }
@@ -232,14 +234,23 @@ function buildTimetable(original: string[][], ctx: Ctx, withRoster: boolean): Ti
 
 export async function fetchTimetable(): Promise<Timetable> {
   const [original, enroll] = await Promise.all([gvizLoadRetry(SHEETS.original), gvizLoadRetry(SHEETS.enroll)]);
-  const rosterResults = await Promise.allSettled(ROSTER_SHEETS.map((name) => gvizLoadRetry(name)));
+  // Roster sheets: a few at a time, and remember which ones failed so the UI can say so (and offer a retry).
   const rosterTables = new Map<string, string[][]>();
-  rosterResults.forEach((result, index) => { if (result.status === 'fulfilled') rosterTables.set(ROSTER_SHEETS[index], tableRows(result.value)); });
+  const failedRosters: string[] = [];
+  const queue = [...ROSTER_SHEETS];
+  const worker = async () => {
+    for (let name = queue.shift(); name; name = queue.shift()) {
+      try { rosterTables.set(name, tableRows(await gvizLoadRetry(name, ROSTER_TIMEOUT_MS))); }
+      catch { failedRosters.push(name); }
+    }
+  };
+  await Promise.all(Array.from({ length: ROSTER_PARALLEL }, worker));
   const timetable = buildTimetable(tableRows(original), { enroll: buildEnrollment(tableRows(enroll)), roster: buildRoster(rosterTables) }, rosterTables.size > 0);
   if (!timetable) throw new TimetableError('no_teacher');
+  timetable.failedRosters = failedRosters;
   // Cache lesson names only; student lists are never written to browser storage by this app.
   try {
-    const slim: Timetable = { ...timetable, withRoster: false, days: Object.fromEntries(Object.entries(timetable.days).map(([day, lessons]) => [day, lessons.map((lesson) => ({ ...lesson, groups: [] }))])) };
+    const slim: Timetable = { ...timetable, withRoster: false, failedRosters: undefined, days: Object.fromEntries(Object.entries(timetable.days).map(([day, lessons]) => [day, lessons.map((lesson) => ({ ...lesson, groups: [] }))])) };
     localStorage.setItem(CACHE_KEY, JSON.stringify(slim));
   } catch { /* Cache is optional. */ }
   return timetable;
