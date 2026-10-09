@@ -20,6 +20,8 @@ import { useDriveSync } from '@/lib/use-drive-sync';
 import type { SyncRecord, SyncSnapshot, SyncTask } from '@/lib/drive-sync';
 import { AttendanceSheet } from '@/components/attendance-sheet';
 import { MailSheet } from '@/components/mail-sheet';
+import { MemoSheet } from '@/components/memo-sheet';
+import { loadMemos, loadMemosDeleted, newestFirst, saveMemos, type Memo } from '@/lib/memos';
 
 type ScheduleFilter = '전체' | '캘린더' | '수업' | '학교' | '개인';
 type TaskCategory = '학교' | '개인';
@@ -100,8 +102,6 @@ const initialTasks: PlannerTask[] = [
 const STORAGE_TASKS = 'minjok-schedule.tasks.v1';
 const STORAGE_LINKED = 'minjok-schedule.google-linked.v1';
 const STORAGE_MAIL_LINKED = 'minjok-schedule.mail-linked.v1';
-const STORAGE_NOTE = 'minjok-schedule.note.v1';
-const STORAGE_NOTE_AT = 'minjok-schedule.note-at.v1';
 const STORAGE_SYNC_ATTENDANCE = 'minjok-schedule.sync-attendance.v1';
 const STORAGE_DELETED = 'minjok-schedule.tasks-deleted.v1';
 
@@ -132,13 +132,6 @@ function taskDetail(task: PlannerTask, state: 'on' | 'overdue' | 'off') {
 function loadDeleted(): Record<string, number> {
   try { const parsed: unknown = JSON.parse(localStorage.getItem(STORAGE_DELETED) ?? '{}'); return parsed && typeof parsed === 'object' ? (parsed as Record<string, number>) : {}; } catch { return {}; }
 }
-function loadNoteAt() {
-  try { return Number(localStorage.getItem(STORAGE_NOTE_AT) ?? 0) || 0; } catch { return 0; }
-}
-function loadNote() {
-  try { return localStorage.getItem(STORAGE_NOTE) ?? '오늘 과학 수행평가 초안 제출하기. 끝나면 서점에 들러서 새 노트 구경하기.'; }
-  catch { return '오늘 과학 수행평가 초안 제출하기. 끝나면 서점에 들러서 새 노트 구경하기.'; }
-}
 
 // Sample events are tagged 학교; live events show their calendar name, except when it is just an e-mail address.
 function eventLabel(event: CalendarEvent) {
@@ -168,15 +161,15 @@ export default function App() {
   const [promptDismissed, setPromptDismissed] = useState(false);
   const [activeFilter, setActiveFilter] = useState<ScheduleFilter>('전체');
   const [tasks, setTasks] = useState<PlannerTask[]>(loadTasks);
-  const [note, setNote] = useState(loadNote);
-  const [noteDraft, setNoteDraft] = useState(note);
-  const [noteAt, setNoteAt] = useState(loadNoteAt);
+  const [memos, setMemos] = useState<Memo[]>(loadMemos);
+  const [memoDeleted, setMemoDeleted] = useState(loadMemosDeleted);
+  const [undoMemo, setUndoMemo] = useState<Memo | null>(null);
   const [syncAttendance, setSyncAttendance] = useState(() => { try { return localStorage.getItem(STORAGE_SYNC_ATTENDANCE) !== '0'; } catch { return true; } });
   const [deleted, setDeleted] = useState(loadDeleted);
   const [profileOpen, setProfileOpen] = useState(false);
   const [installEvent, setInstallEvent] = useState<InstallPrompt | null>(null);
   const [standalone, setStandalone] = useState(isStandalone);
-  const [noteOpen, setNoteOpen] = useState(false);
+  const [memoOpen, setMemoOpen] = useState(false);
   const [taskOpen, setTaskOpen] = useState(false);
   const [taskDraft, setTaskDraft] = useState('');
   const [taskCategory, setTaskCategory] = useState<TaskCategory>('학교');
@@ -242,31 +235,34 @@ export default function App() {
   useEffect(() => {
     try { localStorage.setItem(STORAGE_TASKS, JSON.stringify(tasks)); } catch { /* Local-only app can still be used for this session. */ }
   }, [tasks]);
+  useEffect(() => { saveMemos(memos, memoDeleted); }, [memos, memoDeleted]);
   useEffect(() => {
-    try { localStorage.setItem(STORAGE_NOTE, note); } catch { /* Local-only app can still be used for this session. */ }
-  }, [note]);
+    try { localStorage.setItem(STORAGE_DELETED, JSON.stringify(deleted)); } catch { /* Local-only app can still be used for this session. */ }
+  }, [deleted]);
   useEffect(() => {
-    try { localStorage.setItem(STORAGE_NOTE_AT, String(noteAt)); localStorage.setItem(STORAGE_DELETED, JSON.stringify(deleted)); } catch { /* Local-only app can still be used for this session. */ }
-  }, [noteAt, deleted]);
+    if (!undoMemo) return undefined;
+    const timer = window.setTimeout(() => setUndoMemo(null), 8000);
+    return () => window.clearTimeout(timer);
+  }, [undoMemo]);
 
   // Device sync (Google Drive app-data folder): tasks and the private memo only.
   const sync = useDriveSync(
     (): SyncSnapshot => ({
-      tasks: tasks as unknown as SyncTask[], deleted, note: { text: note, at: noteAt },
+      tasks: tasks as unknown as SyncTask[], deleted, memos, memoDeleted,
       // Read straight from storage so edits made in the Kim Taewan attendance app are included.
       ...(syncAttendance ? { attendance: { records: loadRecords() as unknown as Record<string, SyncRecord>, deleted: loadAttendanceDeleted() } } : {}),
     }),
     (merged) => {
       setTasks(merged.tasks as unknown as PlannerTask[]);
       setDeleted(merged.deleted);
-      setNote(merged.note.text);
-      setNoteAt(merged.note.at);
+      setMemos(merged.memos);
+      setMemoDeleted(merged.memoDeleted);
       if (syncAttendance && merged.attendance) {
         replaceAttendance(merged.attendance.records as unknown as Records, merged.attendance.deleted);
         setRecords(merged.attendance.records as unknown as Records);
       }
     },
-    JSON.stringify([tasks, deleted, note, noteAt, syncAttendance ? records : null]),
+    JSON.stringify([tasks, deleted, memos, memoDeleted, syncAttendance ? records : null]),
   );
   const syncCaption = sync.status === 'syncing' ? '동기화 중…'
     : sync.status === 'ok' ? `동기화됨 · ${new Date(sync.lastAt ?? Date.now()).toLocaleTimeString('ko-KR', { hour: 'numeric', minute: '2-digit' })}`
@@ -445,13 +441,29 @@ export default function App() {
     flash('Gmail 연결을 해제했어요.');
   }
   function closeMail() { setMailOpen(false); setNav('오늘'); }
-  function saveNote() {
-    const saved = noteDraft.trim();
-    if (!saved) { flash('메모 내용을 한 줄 적어주세요.'); return; }
-    setNote(saved);
-    setNoteAt(Date.now());
-    setNoteOpen(false);
-    flash('나만의 메모에 저장했어요.');
+  // Returns true when saved (the sheet then goes back to its list).
+  function saveMemo(id: number | null, text: string): boolean {
+    const saved = text.trim();
+    if (!saved) { flash('메모 내용을 한 줄 적어주세요.'); return false; }
+    const now = Date.now();
+    if (id === null) setMemos((current) => [{ id: now, text: saved, updatedAt: now }, ...current]);
+    else setMemos((current) => current.map((memo) => memo.id === id ? { ...memo, text: saved, updatedAt: now } : memo));
+    flash(id === null ? '새 메모를 추가했어요.' : '메모를 저장했어요.');
+    return true;
+  }
+  function deleteMemo(id: number) {
+    const target = memos.find((memo) => memo.id === id);
+    if (!target) return;
+    setUndoMemo(target);
+    setMemos((current) => current.filter((memo) => memo.id !== id));
+    setMemoDeleted((current) => ({ ...current, [String(id)]: Date.now() }));
+  }
+  function restoreMemo() {
+    if (!undoMemo) return;
+    const back = { ...undoMemo, updatedAt: Date.now() };
+    setMemos((current) => [back, ...current]);
+    setMemoDeleted((current) => { const next = { ...current }; delete next[String(back.id)]; return next; });
+    setUndoMemo(null);
   }
   function addTask() {
     const title = taskDraft.trim();
@@ -468,8 +480,7 @@ export default function App() {
     if (label === '메일') {
       setMailOpen(true);
     } else if (label === '메모') {
-      setNoteDraft(note);
-      setNoteOpen(true);
+      setMemoOpen(true);
     } else if (label === '할 일') {
       document.getElementById('integrated-tasks')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
       flash('학교와 개인 할 일을 모아봤어요.');
@@ -581,9 +592,9 @@ export default function App() {
         </div>
         <div className="is-col">
         {(activeFilter === '전체' || activeFilter === '개인') && <section className="is-section" aria-label="개인 메모 미리보기">
-          <button type="button" className="is-note-card" onClick={() => { setNoteDraft(note); setNoteOpen(true); }} data-testid="button-open-note">
-            <span className="is-note-head"><span className="is-note-label"><StickyNote size={13} /> 나만 보는 메모</span><span className="is-note-open"><ChevronRight size={15} /></span></span>
-            <span className="is-note-preview" data-testid="text-note-preview">{note || '오늘 기억해둘 일을 적어보세요.'}</span>
+          <button type="button" className="is-note-card" onClick={() => setMemoOpen(true)} data-testid="button-open-note">
+            <span className="is-note-head"><span className="is-note-label"><StickyNote size={13} /> 나만 보는 메모 · {memos.length}개</span><span className="is-note-open"><ChevronRight size={15} /></span></span>
+            <span className="is-note-preview" data-testid="text-note-preview">{newestFirst(memos)[0]?.text || '메모를 추가해 보세요.'}</span>
           </button>
         </section>}
 
@@ -680,14 +691,7 @@ export default function App() {
         onClose={() => setAttendancePeriod(null)}
       />}
       {mailOpen && <MailSheet token={mailToken} connecting={reconnecting} onConnect={() => void connectMail()} onExpired={() => { setMailToken(null); flash('Gmail 로그인이 만료됐어요. 다시 연결해 주세요.'); }} onClose={closeMail} />}
-      {noteOpen && <div className="is-modal-backdrop" onClick={(event) => { if (event.target === event.currentTarget) setNoteOpen(false); }}>
-        <form className="is-modal" aria-label="메모 편집" onSubmit={(event) => { event.preventDefault(); saveNote(); }}>
-          <div className="is-modal-head"><h2 className="is-modal-title">나만 보는 메모</h2><button type="button" className="is-close" aria-label="닫기" onClick={() => setNoteOpen(false)} data-testid="button-close-note"><X size={17} /></button></div>
-          <textarea className="is-textarea" aria-label="메모 내용" data-testid="input-note-content" value={noteDraft} onChange={(event) => setNoteDraft(event.target.value)} placeholder="기억해둘 일을 적어보세요" />
-          <p className="is-modal-hint">이 메모는 이 기기의 브라우저에 저장돼요.</p>
-          <button type="submit" className="is-modal-submit" data-testid="button-save-note"><StickyNote size={14} /> 메모 저장하기</button>
-        </form>
-      </div>}
+      {memoOpen && <MemoSheet memos={memos} undo={undoMemo} onSave={saveMemo} onDelete={deleteMemo} onUndo={restoreMemo} onClose={() => { setMemoOpen(false); setNav('오늘'); }} />}
       {taskOpen && <div className="is-modal-backdrop" onClick={(event) => { if (event.target === event.currentTarget) setTaskOpen(false); }}>
         <form className="is-modal" aria-label="할 일 추가" onSubmit={(event) => { event.preventDefault(); addTask(); }}>
           <div className="is-modal-head"><h2 className="is-modal-title">새 할 일 담기</h2><button type="button" className="is-close" aria-label="닫기" onClick={() => setTaskOpen(false)} data-testid="button-close-task"><X size={17} /></button></div>

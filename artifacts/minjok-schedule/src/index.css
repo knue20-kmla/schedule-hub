@@ -483,3 +483,11 @@ button.is-class:hover { background: #f6f9ff; }
 .is-sync-opt input { flex: 0 0 22px; width: 22px; height: 22px; margin-top: 2px; accent-color: var(--navy); }
 .is-sync-opt strong { display: block; color: var(--deep); font-size: 13px; font-weight: 800; }
 .is-sync-opt small { display: block; margin-top: 2px; color: #5d6985; font-size: 11px; line-height: 1.4; }
+
+/* memo list */
+.is-memo-list { display: flex; flex-direction: column; margin-top: 8px; }
+.is-memo-item { display: flex; align-items: stretch; border-bottom: 1px solid #edf0f5; }
+.is-memo-open { display: flex; flex: 1 1 auto; flex-direction: column; gap: 4px; min-width: 0; min-height: 64px; padding: 10px 2px; border: 0; background: transparent; text-align: left; cursor: pointer; }
+.is-memo-open:active { background: #f1f4f9; }
+.is-memo-text { display: -webkit-box; overflow: hidden; color: var(--deep); font-size: 14px; font-weight: 650; line-height: 1.5; overflow-wrap: anywhere; -webkit-box-orient: vertical; -webkit-line-clamp: 3; }
+.is-memo-when { color: #8791a5; font-size: 11px; }

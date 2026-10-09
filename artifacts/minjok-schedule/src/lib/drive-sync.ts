@@ -20,11 +20,12 @@ export const requestDriveToken = (prompt: '' | 'consent' | 'select_account' = ''
 export const disconnectDrive = (token: AccessToken | null) => revokeToken(SLOT, token);
 
 export type SyncTask = { id: number; updatedAt?: number } & Record<string, unknown>;
-export type SyncNote = { text: string; at: number };
+export type SyncMemo = { id: number; text: string; updatedAt: number };
+export type SyncNote = { text: string; at: number }; // legacy single memo, only read from older cloud files
 export type SyncRecord = { updatedAt?: string } & Record<string, unknown>;
 export type SyncAttendance = { records: Record<string, SyncRecord>; deleted: Record<string, number> };
-export type SyncSnapshot = { tasks: SyncTask[]; deleted: Record<string, number>; note: SyncNote; attendance?: SyncAttendance };
-type RemoteFile = { v: 1; tasks: Record<string, SyncTask>; deleted: Record<string, number>; note: SyncNote; attendance?: SyncAttendance };
+export type SyncSnapshot = { tasks: SyncTask[]; deleted: Record<string, number>; memos: SyncMemo[]; memoDeleted: Record<string, number>; attendance?: SyncAttendance };
+type RemoteFile = { v: 1; tasks: Record<string, SyncTask>; deleted: Record<string, number>; memos?: Record<string, SyncMemo>; memoDeleted?: Record<string, number>; note?: SyncNote; attendance?: SyncAttendance };
 
 const stamp = (task: SyncTask | undefined) => task?.updatedAt ?? 0;
 const recordStamp = (record: SyncRecord | undefined) => (record?.updatedAt ? Date.parse(record.updatedAt) || 0 : 0);
@@ -71,17 +72,31 @@ export function mergeSnapshots(local: SyncSnapshot, remote: SyncSnapshot | null,
   remote.tasks.forEach((task) => { if (!localById.has(String(task.id))) { const w = winner(String(task.id)); if (w) fresh.push(w); } });
   fresh.sort((a, b) => Number(b.id) - Number(a.id));
 
-  const note = remote.note.at > local.note.at ? remote.note : local.note;
+  // Memos: same last-writer-wins + tombstone rule as tasks.
+  const memoDeleted: Record<string, number> = {};
+  [local.memoDeleted, remote.memoDeleted].forEach((map) => Object.entries(map).forEach(([id, at]) => {
+    if (now - at < TOMBSTONE_TTL) memoDeleted[id] = Math.max(memoDeleted[id] ?? 0, at);
+  }));
+  const localMemos = new Map(local.memos.map((memo) => [String(memo.id), memo]));
+  const remoteMemos = new Map(remote.memos.map((memo) => [String(memo.id), memo]));
+  const memos: SyncMemo[] = [];
+  new Set([...localMemos.keys(), ...remoteMemos.keys()]).forEach((id) => {
+    const l = localMemos.get(id);
+    const r = remoteMemos.get(id);
+    const pick = l && r ? (r.updatedAt > l.updatedAt ? r : l) : (l ?? r);
+    if (pick && (memoDeleted[id] ?? 0) <= pick.updatedAt) memos.push(pick);
+  });
   // Attendance off on this device: keep whatever the cloud already has instead of dropping it.
   const attendance = local.attendance ? (remote.attendance ? mergeAttendance(local.attendance, remote.attendance, now) : local.attendance) : remote.attendance;
-  return { tasks: [...fresh, ...kept], deleted, note, ...(attendance ? { attendance } : {}) };
+  return { tasks: [...fresh, ...kept], deleted, memos, memoDeleted, ...(attendance ? { attendance } : {}) };
 }
 
 export const sameSnapshot = (a: SyncSnapshot, b: SyncSnapshot) => {
   const norm = (s: SyncSnapshot) => JSON.stringify({
     tasks: [...s.tasks].sort((x, y) => Number(x.id) - Number(y.id)),
     deleted: Object.fromEntries(Object.entries(s.deleted).sort()),
-    note: s.note,
+    memos: [...s.memos].sort((x, y) => x.id - y.id),
+    memoDeleted: Object.fromEntries(Object.entries(s.memoDeleted).sort()),
     attendance: s.attendance ? { records: Object.fromEntries(Object.entries(s.attendance.records).sort()), deleted: Object.fromEntries(Object.entries(s.attendance.deleted).sort()) } : null,
   });
   return norm(a) === norm(b);
@@ -91,13 +106,16 @@ const toRemote = (snapshot: SyncSnapshot): RemoteFile => ({
   v: 1,
   tasks: Object.fromEntries(snapshot.tasks.map((task) => [String(task.id), task])),
   deleted: snapshot.deleted,
-  note: snapshot.note,
+  memos: Object.fromEntries(snapshot.memos.map((memo) => [String(memo.id), memo])),
+  memoDeleted: snapshot.memoDeleted,
   ...(snapshot.attendance ? { attendance: snapshot.attendance } : {}),
 });
 const fromRemote = (file: RemoteFile): SyncSnapshot => ({
   tasks: Object.values(file.tasks ?? {}),
   deleted: file.deleted ?? {},
-  note: file.note ?? { text: '', at: 0 },
+  // Older cloud files held one memo in `note`: treat it as memo #1 so nothing is lost.
+  memos: file.memos ? Object.values(file.memos) : file.note?.text ? [{ id: 1, text: file.note.text, updatedAt: file.note.at }] : [],
+  memoDeleted: file.memoDeleted ?? {},
   ...(file.attendance ? { attendance: file.attendance } : {}),
 });
 
