@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  BookOpen, CalendarDays, Check, ChevronDown, ChevronRight, Clock3, Download,
+  BookOpen, CalendarDays, Check, ChevronDown, ChevronLeft, ChevronRight, Clock3, Download,
   Cloud, FileText, GraduationCap, Mail, Plus, RefreshCw, StickyNote, Trash2, UserRound, X,
 } from 'lucide-react';
 import {
@@ -26,10 +26,11 @@ type TaskCategory = '학교' | '개인';
 type PlannerTask = { id: number; title: string; detail: string; category: TaskCategory; done: boolean; start?: string; end?: string; updatedAt?: number };
 
 const SAMPLE_KEYS = ['6', '7', '8', '9', '10'];
-function buildDays() {
+const DAY_STEP = 5;
+function buildDays(shift = 0) {
   const today = new Date();
   return [-2, -1, 0, 1, 2].map((offset, index) => {
-    const date = new Date(today.getFullYear(), today.getMonth(), today.getDate() + offset);
+    const date = new Date(today.getFullYear(), today.getMonth(), today.getDate() + shift + offset);
     return { key: dayKey(date), index, month: date.getMonth() + 1, date: String(date.getDate()), day: '일월화수목금토'[date.getDay()] };
   });
 }
@@ -145,8 +146,10 @@ function eventLabel(event: CalendarEvent) {
 }
 
 export default function App() {
-  const days = useMemo(buildDays, []);
-  const [selectedDate, setSelectedDate] = useState(days[2].key);
+  const todayKey = useMemo(() => dayKey(new Date()), []);
+  const [dayShift, setDayShift] = useState(0);
+  const days = useMemo(() => buildDays(dayShift), [dayShift]);
+  const [selectedDate, setSelectedDate] = useState(todayKey);
   const [token, setToken] = useState<AccessToken | null>(readStoredToken);
   const [liveEvents, setLiveEvents] = useState<LiveEvent[] | null>(null);
   const [calendarBusy, setCalendarBusy] = useState(false);
@@ -263,7 +266,6 @@ export default function App() {
 
   const visibleCalendarEvents = activeFilter === '개인' || activeFilter === '수업' ? [] : calendarEvents;
   const showTimetable = activeFilter === '전체' || activeFilter === '수업';
-  const todayKey = days[2].key;
   const isToday = selectedDay.key === todayKey;
   const inCategory = (task: PlannerTask) => activeFilter === '학교' ? task.category === '학교' : activeFilter === '개인' ? task.category === '개인' : true;
   const visibleTasks = activeFilter === '캘린더' || activeFilter === '수업'
@@ -307,6 +309,15 @@ export default function App() {
     setTaskStart(selectedDay.key);
     setTaskEndDraft('');
     setTaskOpen(true);
+  }
+  function shiftDays(direction: 1 | -1) {
+    const next = dayShift + direction * DAY_STEP;
+    setDayShift(next);
+    setSelectedDate(buildDays(next)[2].key);
+  }
+  function jumpToToday() {
+    setDayShift(0);
+    setSelectedDate(todayKey);
   }
   async function loadCalendar(active: AccessToken) {
     setCalendarBusy(true);
@@ -379,6 +390,7 @@ export default function App() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token, mailToken, sync.token]);
   useEffect(() => { if (!needsLogin) setPromptDismissed(false); }, [needsLogin]);
+  useEffect(() => { if (token && liveEvents !== null) void loadCalendar(token); }, [dayShift]); // eslint-disable-line react-hooks/exhaustive-deps
   const lostServices = [linked && !token ? 'cal' : '', mailLinked && !mailToken ? 'mail' : '', sync.linked && !sync.token ? 'drive' : ''].filter(Boolean) as Service[];
   const showReconnect = needsLogin && !promptDismissed && !reconnecting;
 
@@ -482,20 +494,22 @@ export default function App() {
           <section className="is-campus-hero" aria-label="민족사관고등학교 캠퍼스와 오늘의 일정">
             <img className="is-campus-photo" src={assetUrl('images/integrated-schedule-promo.jpg')} alt="나무 사이로 학교 건물과 동상이 보이는 민족사관고등학교 캠퍼스" data-testid="img-campus-photo" />
             <div className="is-campus-veil" aria-hidden="true" />
-            <div className="is-campus-topline"><span className="is-campus-weather"><span>18°</span><span aria-hidden="true">·</span><span>구름 조금</span></span></div>
+            <div className="is-campus-topline">{dayShift !== 0 && <button type="button" className="is-today-jump" onClick={jumpToToday} data-testid="button-today-jump">오늘로</button>}<span className="is-campus-weather"><span>18°</span><span aria-hidden="true">·</span><span>구름 조금</span></span></div>
             <div className="is-campus-copy">
               <p className="is-campus-date" data-testid="text-selected-date">{selectedDay.month}월 {selectedDay.date}일 {selectedDay.day}요일</p>
-              <h1 className="is-heading">오늘의 일정</h1>
+              <h1 className="is-heading">{isToday ? '오늘의 일정' : '선택한 날의 일정'}</h1>
             </div>
           </section>
         </header>
 
         <div className="is-date-strip" role="group" aria-label="날짜 선택">
+          <button type="button" className="is-day-nav" onClick={() => shiftDays(-1)} aria-label={`이전 ${DAY_STEP}일`} data-testid="button-days-prev"><ChevronLeft size={18} strokeWidth={2.2} /></button>
           {days.map((day) => (
             <button key={day.key} type="button" className={`is-day${selectedDate === day.key ? ' active' : ''}`} aria-pressed={selectedDate === day.key} aria-label={`${day.month}월 ${day.date}일 ${day.day}요일`} data-testid={`button-date-${day.date}`} onClick={() => { setSelectedDate(day.key); flash(`${day.month}월 ${day.date}일 ${day.day}요일 일정이에요.`); }}>
               <span className="is-day-name">{day.day}</span><span className="is-day-number">{day.date}</span>
             </button>
           ))}
+          <button type="button" className="is-day-nav" onClick={() => shiftDays(1)} aria-label={`다음 ${DAY_STEP}일`} data-testid="button-days-next"><ChevronRight size={18} strokeWidth={2.2} /></button>
         </div>
         <div className="is-filter-row" role="group" aria-label="일정 출처 및 분류">
           {(['전체', '캘린더', '수업', '학교', '개인'] as ScheduleFilter[]).map((filter) => (

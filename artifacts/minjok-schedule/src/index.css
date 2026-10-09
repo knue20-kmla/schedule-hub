@@ -455,3 +455,11 @@ button.is-class:hover { background: #f6f9ff; }
   .is-columns:not(.single) #integrated-agenda .is-section-sub,
   .is-columns:not(.single) #integrated-tasks .is-section-sub { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 }
+
+/* date window navigation */
+.is-day-nav { display: grid; flex: 0 0 34px; width: 34px; place-items: center; align-self: stretch; padding: 0; border: 0; border-radius: 14px; background: transparent; color: #4b5876; cursor: pointer; }
+.is-day-nav:active { background: #e4eaf5; }
+.is-date-strip { gap: 2px; }
+.is-campus-weather { margin-left: auto; }
+.is-today-jump { min-height: 34px; padding: 0 14px; border: 1px solid rgba(255,255,255,.35); border-radius: 999px; background: rgba(217,169,63,.92); color: #3a2704; font-size: 12px; font-weight: 850; cursor: pointer; box-shadow: 0 4px 12px rgba(8,16,48,.25); }
+@media (min-width: 768px) and (not ((min-width: 900px) and (min-height: 640px) and (hover: hover) and (pointer: fine))) { .is-day-nav { flex-basis: 44px; width: 44px; } }
